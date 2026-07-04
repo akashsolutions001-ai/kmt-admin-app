@@ -127,3 +127,18 @@ export interface MaintenanceRecord {
   status: 'open' | 'resolved';
   createdAt: string;
 }
+
+export type RequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface ChangeRequest {
+  id: string;
+  studentName: string;
+  studentId: string;
+  currentRoute: string;
+  currentStop: string;
+  requestedRoute: string;
+  requestedStop: string;
+  status: RequestStatus;
+  requestedAt: string;
+}
+
