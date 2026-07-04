@@ -102,14 +102,14 @@ export default function Passengers() {
           )}
         </div>
 
-        <div className="glass-card overflow-hidden">
+        <div className="glass-card overflow-x-auto">
           <h3 className="font-semibold p-4 border-b">Registered Passengers</h3>
           <table className="admin-table">
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Phone</th>
-                <th>Route</th>
+                <th className="hidden sm:table-cell">Phone</th>
+                <th className="hidden sm:table-cell">Route</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -124,8 +124,8 @@ export default function Passengers() {
                 passengers.map((p) => (
                   <tr key={p.id}>
                     <td className="font-medium">{p.name}</td>
-                    <td>{p.phone ?? '—'}</td>
-                    <td className="truncate max-w-[120px]">{p.routeName ?? '—'}</td>
+                    <td className="hidden sm:table-cell">{p.phone ?? '—'}</td>
+                    <td className="hidden sm:table-cell truncate max-w-[120px]">{p.routeName ?? '—'}</td>
                     <td>
                       <span className={p.status === 'active' ? 'text-success' : 'text-muted-foreground'}>
                         {p.status ?? 'active'}

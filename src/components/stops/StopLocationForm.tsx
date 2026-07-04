@@ -38,7 +38,7 @@ export function StopLocationForm({
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label htmlFor={`${nameInputId}-lat`}>Latitude</Label>
           <Input
@@ -79,14 +79,15 @@ export function StopLocationForm({
           Use Current Location
         </Button>
         {parsedCoords && (
-          <Button type="button" variant="outline" className="flex-1" asChild>
+          <Button type="button" variant="outline" className="flex-1 min-w-0" asChild>
             <a
               href={getGoogleMapsUrl(parsedCoords.lat, parsedCoords.lng)}
               target="_blank"
               rel="noopener noreferrer"
+              className="flex items-center gap-2 truncate"
             >
-              <ExternalLink className="h-4 w-4 mr-2" />
-              Open in Google Maps
+              <ExternalLink className="h-4 w-4 shrink-0" />
+              <span className="truncate">Open in Google Maps</span>
             </a>
           </Button>
         )}
@@ -112,7 +113,7 @@ export function StopLocationForm({
       {parsedCoords && (
         <div className="space-y-2">
           <Label>Map Preview</Label>
-          <div className="rounded-lg border overflow-hidden h-48 bg-muted">
+          <div className="rounded-lg border overflow-hidden h-36 sm:h-52 bg-muted">
             <iframe
               title="Stop location preview"
               className="w-full h-full border-0"

@@ -81,7 +81,7 @@ export default function Depots() {
         </Button>
       </div>
 
-      <div className="glass-card overflow-hidden">
+      <div className="glass-card overflow-x-auto">
         <table className="admin-table">
           <thead>
             <tr>

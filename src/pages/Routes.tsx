@@ -29,11 +29,12 @@ import {
   MapPin,
   Route as RouteIcon,
   ArrowLeft,
+  DatabaseZap,
 } from 'lucide-react';
 import { Route, Stop, CatalogStop } from '@/types/admin';
 import { cn } from '@/lib/utils';
 import { getGoogleMapsUrl } from '@/lib/mapUtils';
-import { getCatalogStops } from '@/lib/stopsCatalog';
+import { getCatalogStops, addCatalogStop } from '@/lib/stopsCatalog';
 import { useStopLocationForm, parseStopFormCoordinates } from '@/hooks/useStopLocationForm';
 import { toast } from 'sonner';
 import { db } from '@/lib/firebase';
@@ -61,6 +62,7 @@ export default function Routes() {
   const [editingStop, setEditingStop] = useState<Stop | null>(null);
   const [stopToDelete, setStopToDelete] = useState<Stop | null>(null);
   const [showRouteDetails, setShowRouteDetails] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
 
   const [routeFormData, setRouteFormData] = useState({ name: '', startingPoint: '' });
   const [catalogStops, setCatalogStops] = useState<CatalogStop[]>([]);
@@ -266,10 +268,20 @@ export default function Routes() {
             : s
         );
       } else {
+        // Save to stops collection (catalog) first, so the stop is available in the library
+        const catalogPayload = {
+          name: stopFormData.name,
+          ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
+          ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
+          ...(mapLink ? { mapLink } : {}),
+        };
+        const catalogId = await addCatalogStop(catalogPayload);
+
         const newStop: Stop = {
           id: `${selectedRoute.id}-${Date.now()}`,
           name: stopFormData.name,
           order: selectedRoute.stops.length + 1,
+          catalogStopId: catalogId,
           ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
           ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
           ...(mapLink ? { mapLink } : {}),
@@ -283,9 +295,11 @@ export default function Routes() {
         updatedAt: Timestamp.now(),
       });
       setIsStopFormOpen(false);
+      toast.success(editingStop ? 'Stop updated' : 'Stop added and saved to library');
       loadData();
     } catch (error) {
       console.error('Error saving stop:', error);
+      toast.error('Failed to save stop');
     }
   };
 
@@ -335,6 +349,87 @@ export default function Routes() {
     }
   };
 
+  // One-time migration: push existing route stops (without catalogStopId) into the stops collection
+  const handleMigrateStops = async () => {
+    setIsMigrating(true);
+    try {
+      // Fetch fresh routes & existing catalog in parallel
+      const [routesSnap, existingCatalog] = await Promise.all([
+        getDocs(query(collection(db, 'routes'), orderBy('name'))),
+        getCatalogStops(),
+      ]);
+
+      const allRoutes = routesSnap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      })) as Route[];
+
+      // Build a name→catalogId map to avoid duplicates
+      const catalogByName = new Map<string, string>(
+        existingCatalog.map((s) => [s.name.toLowerCase().trim(), s.id])
+      );
+
+      let migratedCount = 0;
+
+      for (const route of allRoutes) {
+        const stops: Stop[] = route.stops ?? [];
+        let routeUpdated = false;
+
+        const updatedStops = await Promise.all(
+          stops.map(async (stop) => {
+            // Skip stops already linked to the catalog
+            if (stop.catalogStopId) return stop;
+
+            const nameKey = stop.name.toLowerCase().trim();
+            let catalogId = catalogByName.get(nameKey);
+
+            if (!catalogId) {
+              // Create a new catalog entry
+              const payload = {
+                name: stop.name,
+                ...(stop.latitude != null ? { latitude: stop.latitude } : {}),
+                ...(stop.longitude != null ? { longitude: stop.longitude } : {}),
+                ...(stop.mapLink ? { mapLink: stop.mapLink } : {}),
+              };
+              catalogId = await addCatalogStop(payload);
+              catalogByName.set(nameKey, catalogId);
+            }
+
+            routeUpdated = true;
+            migratedCount++;
+            return { ...stop, catalogStopId: catalogId };
+          })
+        );
+
+        if (routeUpdated) {
+          const routeRef = doc(db, 'routes', route.id);
+          await updateDoc(routeRef, {
+            stops: updatedStops,
+            updatedAt: Timestamp.now(),
+          });
+        }
+      }
+
+      if (migratedCount === 0) {
+        toast.info('All stops are already in the library — nothing to migrate.');
+      } else {
+        toast.success(`Migrated ${migratedCount} stop${migratedCount > 1 ? 's' : ''} to the Stop Library.`);
+      }
+      loadData();
+    } catch (error) {
+      console.error('Migration error:', error);
+      toast.error('Migration failed — check the console for details.');
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
+  // Count stops that still need migration
+  const unmigatedCount = routes.reduce(
+    (acc, r) => acc + r.stops.filter((s) => !s.catalogStopId).length,
+    0
+  );
+
   if (isLoading) {
     return (
       <AdminLayout title="Routes & Stops" subtitle="Loading...">
@@ -350,10 +445,26 @@ export default function Routes() {
       title="Routes & Stops"
       subtitle="Define how buses move in the real world"
       actions={
-        <Button onClick={handleAddRoute} size="sm" className="sm:size-default">
-          <Plus className="h-4 w-4 sm:mr-2" />
-          <span className="hidden sm:inline">Add Route</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          {unmigatedCount > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleMigrateStops}
+              disabled={isMigrating}
+              title={`${unmigatedCount} stop(s) not yet in the library`}
+            >
+              <DatabaseZap className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">
+                {isMigrating ? 'Syncing…' : `Sync ${unmigatedCount} Stop${unmigatedCount > 1 ? 's' : ''}`}
+              </span>
+            </Button>
+          )}
+          <Button onClick={handleAddRoute} size="sm" className="sm:size-default">
+            <Plus className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Add Route</span>
+          </Button>
+        </div>
       }
     >
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
@@ -511,7 +622,7 @@ export default function Routes() {
 
       {/* Route Form Dialog */}
       <Dialog open={isRouteFormOpen} onOpenChange={setIsRouteFormOpen}>
-        <DialogContent className="sm:max-w-md max-w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle className="font-heading">
               {editingRoute ? 'Edit Route' : 'Add New Route'}
@@ -553,7 +664,7 @@ export default function Routes() {
 
       {/* Stop Form Dialog */}
       <Dialog open={isStopFormOpen} onOpenChange={setIsStopFormOpen}>
-        <DialogContent className="sm:max-w-md max-w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="font-heading">
               {editingStop ? 'Edit Stop' : 'Add New Stop'}

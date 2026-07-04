@@ -286,7 +286,7 @@ export default function Drivers() {
 
       {/* Add/Edit Dialog */}
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-        <DialogContent className="sm:max-w-md max-w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle className="font-heading">
               {selectedDriver ? 'Edit Driver' : 'Add New Driver'}

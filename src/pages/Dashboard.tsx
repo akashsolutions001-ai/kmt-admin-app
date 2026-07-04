@@ -89,7 +89,7 @@ export default function Dashboard() {
 
       <div className="mt-6 sm:mt-8">
         <h2 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4">Active Trips</h2>
-        <div className="glass-card overflow-hidden">
+        <div className="glass-card overflow-x-auto">
           <table className="admin-table">
             <thead>
               <tr>

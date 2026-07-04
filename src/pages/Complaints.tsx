@@ -113,27 +113,27 @@ export default function Complaints() {
         {resolved.length > 0 && (
           <section>
             <h2 className="text-lg font-semibold mb-4">Resolved ({resolved.length})</h2>
-            <div className="glass-card overflow-hidden">
+            <div className="glass-card overflow-x-auto">
               <table className="admin-table">
                 <thead>
                   <tr>
                     <th>Passenger</th>
-                    <th>Subject</th>
+                    <th className="hidden sm:table-cell">Subject</th>
                     <th>Status</th>
-                    <th>Date</th>
+                    <th className="hidden sm:table-cell">Date</th>
                   </tr>
                 </thead>
                 <tbody>
                   {resolved.map((c) => (
                     <tr key={c.id}>
                       <td>{c.passengerName}</td>
-                      <td className="truncate max-w-[200px]">{c.subject}</td>
+                      <td className="hidden sm:table-cell truncate max-w-[200px]">{c.subject}</td>
                       <td>
                         <span className={cn('text-sm', c.status === 'resolved' ? 'text-success' : 'text-destructive')}>
                           {c.status}
                         </span>
                       </td>
-                      <td className="text-sm text-muted-foreground">{formatDate(c.createdAt)}</td>
+                      <td className="hidden sm:table-cell text-sm text-muted-foreground">{formatDate(c.createdAt)}</td>
                     </tr>
                   ))}
                 </tbody>

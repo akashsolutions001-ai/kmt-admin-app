@@ -165,7 +165,7 @@ export default function Stops() {
           <p className="text-sm text-muted-foreground mb-4">
             Add stops here once — reuse them when building routes.
           </p>
-          <div className="glass-card overflow-hidden">
+          <div className="glass-card overflow-x-auto">
             <table className="admin-table">
               <thead>
                 <tr>
@@ -234,13 +234,13 @@ export default function Stops() {
           <p className="text-sm text-muted-foreground mb-4">
             Stops currently assigned to routes (manage order in Routes &amp; Stops).
           </p>
-          <div className="glass-card overflow-hidden">
+          <div className="glass-card overflow-x-auto">
             <table className="admin-table">
               <thead>
                 <tr>
                   <th>Stop Name</th>
                   <th>Route</th>
-                  <th>Order</th>
+                  <th className="hidden sm:table-cell">Order</th>
                   <th className="hidden md:table-cell">Coordinates</th>
                   <th className="hidden lg:table-cell">Map</th>
                 </tr>
@@ -257,7 +257,7 @@ export default function Stops() {
                     <tr key={`${stop.routeId}-${stop.id}`}>
                       <td className="font-medium">{stop.name}</td>
                       <td>{stop.routeName}</td>
-                      <td>{stop.order}</td>
+                      <td className="hidden sm:table-cell">{stop.order}</td>
                       <td className="hidden md:table-cell text-sm text-muted-foreground">
                         {stop.latitude != null && stop.longitude != null
                           ? `${stop.latitude.toFixed(4)}, ${stop.longitude.toFixed(4)}`
@@ -287,7 +287,7 @@ export default function Stops() {
       </div>
 
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
-        <DialogContent className="sm:max-w-md max-w-[calc(100vw-2rem)] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingStop ? 'Edit Stop' : 'Add Stop to Library'}</DialogTitle>
           </DialogHeader>

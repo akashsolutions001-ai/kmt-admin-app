@@ -90,7 +90,7 @@ export default function Schedules() {
         <p className="text-xs text-muted-foreground mt-2">Use Import or Add Schedule to manage timetables.</p>
       </div>
 
-      <div className="glass-card overflow-hidden">
+      <div className="glass-card overflow-x-auto">
         <table className="admin-table">
           <thead>
             <tr>
