@@ -40,7 +40,6 @@ export default function Stops() {
     parsedCoords,
     resetForm,
     handleUseCurrentLocation,
-    handleMapLinkChange,
     handleCoordinateChange,
   } = useStopLocationForm();
 
@@ -85,9 +84,6 @@ export default function Stops() {
       name: stop.name,
       latitude: stop.latitude?.toString() ?? '',
       longitude: stop.longitude?.toString() ?? '',
-      mapLink: stop.mapLink ?? (stop.latitude != null && stop.longitude != null
-        ? getGoogleMapsUrl(stop.latitude, stop.longitude)
-        : ''),
     });
     setIsFormOpen(true);
   };
@@ -96,12 +92,11 @@ export default function Stops() {
     if (!formData.name.trim()) return;
 
     try {
-      const { parsedLat, parsedLng, mapLink } = parseStopFormCoordinates(formData);
+      const { parsedLat, parsedLng } = parseStopFormCoordinates(formData);
       const payload = {
         name: formData.name.trim(),
         ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
         ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
-        ...(mapLink ? { mapLink } : {}),
       };
 
       if (editingStop) {
@@ -192,9 +187,9 @@ export default function Stops() {
                           : '—'}
                       </td>
                       <td className="hidden lg:table-cell">
-                        {(stop.mapLink || (stop.latitude != null && stop.longitude != null)) ? (
+                        {stop.latitude != null && stop.longitude != null ? (
                           <a
-                            href={stop.mapLink ?? getGoogleMapsUrl(stop.latitude!, stop.longitude!)}
+                            href={getGoogleMapsUrl(stop.latitude, stop.longitude)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
@@ -264,9 +259,9 @@ export default function Stops() {
                           : '—'}
                       </td>
                       <td className="hidden lg:table-cell">
-                        {(stop.mapLink || (stop.latitude != null && stop.longitude != null)) ? (
+                        {stop.latitude != null && stop.longitude != null ? (
                           <a
-                            href={stop.mapLink ?? getGoogleMapsUrl(stop.latitude!, stop.longitude!)}
+                            href={getGoogleMapsUrl(stop.latitude, stop.longitude)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
@@ -297,7 +292,6 @@ export default function Stops() {
             parsedCoords={parsedCoords}
             onNameChange={(name) => setFormData((prev) => ({ ...prev, name }))}
             onCoordinateChange={handleCoordinateChange}
-            onMapLinkChange={handleMapLinkChange}
             onUseCurrentLocation={handleUseCurrentLocation}
             nameInputId="catalogStopName"
           />

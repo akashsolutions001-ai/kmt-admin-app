@@ -97,6 +97,9 @@ export interface Depot {
   address: string;
   contactPhone?: string;
   busCount?: number;
+  latitude?: number;
+  longitude?: number;
+  mapLink?: string;
 }
 
 export interface Schedule {

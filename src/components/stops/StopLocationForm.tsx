@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ExternalLink, Link2, Loader2, Navigation } from 'lucide-react';
+import { ExternalLink, Loader2, Navigation } from 'lucide-react';
 import { getGoogleMapsUrl, getOpenStreetMapEmbedUrl } from '@/lib/mapUtils';
 import type { StopFormValues } from '@/hooks/useStopLocationForm';
 
@@ -11,9 +11,9 @@ interface StopLocationFormProps {
   parsedCoords: { lat: number; lng: number } | null;
   onNameChange: (name: string) => void;
   onCoordinateChange: (field: 'latitude' | 'longitude', value: string) => void;
-  onMapLinkChange: (value: string) => void;
   onUseCurrentLocation: () => void;
   nameInputId?: string;
+  nameLabel?: string;
 }
 
 export function StopLocationForm({
@@ -22,14 +22,14 @@ export function StopLocationForm({
   parsedCoords,
   onNameChange,
   onCoordinateChange,
-  onMapLinkChange,
   onUseCurrentLocation,
   nameInputId = 'stopName',
+  nameLabel = 'Stop Name',
 }: StopLocationFormProps) {
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor={nameInputId}>Stop Name</Label>
+        <Label htmlFor={nameInputId}>{nameLabel}</Label>
         <Input
           id={nameInputId}
           value={formData.name}
@@ -91,23 +91,6 @@ export function StopLocationForm({
             </a>
           </Button>
         )}
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor={`${nameInputId}-mapLink`}>Map Link</Label>
-        <div className="relative">
-          <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            id={`${nameInputId}-mapLink`}
-            className="pl-9"
-            value={formData.mapLink}
-            onChange={(e) => onMapLinkChange(e.target.value)}
-            placeholder="Paste Google Maps link or lat,lng"
-          />
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Paste a Google Maps URL — coordinates are extracted automatically.
-        </p>
       </div>
 
       {parsedCoords && (

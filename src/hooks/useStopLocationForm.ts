@@ -1,23 +1,17 @@
 import { useState, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
-import {
-  getGoogleMapsUrl,
-  parseCoordinatesFromMapLink,
-  isValidCoordinatePair,
-} from '@/lib/mapUtils';
+import { isValidCoordinatePair } from '@/lib/mapUtils';
 
 export interface StopFormValues {
   name: string;
   latitude: string;
   longitude: string;
-  mapLink: string;
 }
 
 export const emptyStopFormValues = (): StopFormValues => ({
   name: '',
   latitude: '',
   longitude: '',
-  mapLink: '',
 });
 
 export function useStopLocationForm(initial?: Partial<StopFormValues>) {
@@ -51,7 +45,6 @@ export function useStopLocationForm(initial?: Partial<StopFormValues>) {
           ...prev,
           latitude: lat.toFixed(6),
           longitude: lng.toFixed(6),
-          mapLink: getGoogleMapsUrl(lat, lng),
         }));
         setIsLocating(false);
         toast.success('Location captured', {
@@ -66,38 +59,9 @@ export function useStopLocationForm(initial?: Partial<StopFormValues>) {
     );
   }, []);
 
-  const handleMapLinkChange = useCallback((value: string) => {
-    setFormData((prev) => {
-      const next = { ...prev, mapLink: value };
-      const coords = parseCoordinatesFromMapLink(value);
-      if (coords) {
-        next.latitude = coords.lat.toFixed(6);
-        next.longitude = coords.lng.toFixed(6);
-      }
-      return next;
-    });
-  }, []);
-
   const handleCoordinateChange = useCallback((field: 'latitude' | 'longitude', value: string) => {
-    setFormData((prev) => {
-      const next = { ...prev, [field]: value };
-      const lat = parseFloat(field === 'latitude' ? value : prev.latitude);
-      const lng = parseFloat(field === 'longitude' ? value : prev.longitude);
-      if (isValidCoordinatePair(lat, lng)) {
-        next.mapLink = getGoogleMapsUrl(lat, lng);
-      }
-      return next;
-    });
+    setFormData((prev) => ({ ...prev, [field]: value }));
   }, []);
-
-  const buildMapLink = useCallback((): string | undefined => {
-    const lat = formData.latitude ? parseFloat(formData.latitude) : undefined;
-    const lng = formData.longitude ? parseFloat(formData.longitude) : undefined;
-    return (
-      formData.mapLink.trim() ||
-      (isValidCoordinatePair(lat, lng) ? getGoogleMapsUrl(lat!, lng!) : undefined)
-    );
-  }, [formData]);
 
   return {
     formData,
@@ -106,17 +70,12 @@ export function useStopLocationForm(initial?: Partial<StopFormValues>) {
     parsedCoords,
     resetForm,
     handleUseCurrentLocation,
-    handleMapLinkChange,
     handleCoordinateChange,
-    buildMapLink,
   };
 }
 
 export function parseStopFormCoordinates(formData: StopFormValues) {
   const parsedLat = formData.latitude ? parseFloat(formData.latitude) : undefined;
   const parsedLng = formData.longitude ? parseFloat(formData.longitude) : undefined;
-  const mapLink =
-    formData.mapLink.trim() ||
-    (isValidCoordinatePair(parsedLat, parsedLng) ? getGoogleMapsUrl(parsedLat!, parsedLng!) : undefined);
-  return { parsedLat, parsedLng, mapLink };
+  return { parsedLat, parsedLng };
 }

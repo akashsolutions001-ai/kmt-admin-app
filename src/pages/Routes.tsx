@@ -33,7 +33,6 @@ import {
 } from 'lucide-react';
 import { Route, Stop, CatalogStop } from '@/types/admin';
 import { cn } from '@/lib/utils';
-import { getGoogleMapsUrl } from '@/lib/mapUtils';
 import { getCatalogStops, addCatalogStop } from '@/lib/stopsCatalog';
 import { useStopLocationForm, parseStopFormCoordinates } from '@/hooks/useStopLocationForm';
 import { toast } from 'sonner';
@@ -76,7 +75,6 @@ export default function Routes() {
     parsedCoords: parsedStopCoords,
     resetForm: resetStopForm,
     handleUseCurrentLocation,
-    handleMapLinkChange,
     handleCoordinateChange,
   } = useStopLocationForm();
 
@@ -199,7 +197,6 @@ export default function Routes() {
       name: stop.name,
       latitude: lat,
       longitude: lng,
-      mapLink: stop.mapLink || (lat && lng ? getGoogleMapsUrl(parseFloat(lat), parseFloat(lng)) : ''),
     });
     setIsStopFormOpen(true);
   };
@@ -226,7 +223,6 @@ export default function Routes() {
         catalogStopId: catalogStop.id,
         ...(catalogStop.latitude != null ? { latitude: catalogStop.latitude } : {}),
         ...(catalogStop.longitude != null ? { longitude: catalogStop.longitude } : {}),
-        ...(catalogStop.mapLink ? { mapLink: catalogStop.mapLink } : {}),
       };
 
       const routeRef = doc(db, 'routes', selectedRoute.id);
@@ -253,7 +249,7 @@ export default function Routes() {
 
     try {
       let updatedStops: Stop[];
-      const { parsedLat, parsedLng, mapLink } = parseStopFormCoordinates(stopFormData);
+      const { parsedLat, parsedLng } = parseStopFormCoordinates(stopFormData);
 
       if (editingStop) {
         updatedStops = selectedRoute.stops.map(s =>
@@ -263,7 +259,6 @@ export default function Routes() {
               name: stopFormData.name,
               ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
               ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
-              ...(mapLink ? { mapLink } : {}),
             }
             : s
         );
@@ -273,7 +268,6 @@ export default function Routes() {
           name: stopFormData.name,
           ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
           ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
-          ...(mapLink ? { mapLink } : {}),
         };
         const catalogId = await addCatalogStop(catalogPayload);
 
@@ -284,7 +278,6 @@ export default function Routes() {
           catalogStopId: catalogId,
           ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
           ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
-          ...(mapLink ? { mapLink } : {}),
         };
         updatedStops = [...selectedRoute.stops, newStop];
       }
@@ -389,7 +382,6 @@ export default function Routes() {
                 name: stop.name,
                 ...(stop.latitude != null ? { latitude: stop.latitude } : {}),
                 ...(stop.longitude != null ? { longitude: stop.longitude } : {}),
-                ...(stop.mapLink ? { mapLink: stop.mapLink } : {}),
               };
               catalogId = await addCatalogStop(payload);
               catalogByName.set(nameKey, catalogId);
@@ -728,7 +720,6 @@ export default function Routes() {
                 parsedCoords={parsedStopCoords}
                 onNameChange={(name) => setStopFormData((prev) => ({ ...prev, name }))}
                 onCoordinateChange={handleCoordinateChange}
-                onMapLinkChange={handleMapLinkChange}
                 onUseCurrentLocation={handleUseCurrentLocation}
                 nameInputId="routeStopName"
               />
