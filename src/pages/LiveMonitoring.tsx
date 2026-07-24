@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/layout/AdminLayout';
-import { Bus, User, Route, ChevronDown, ChevronUp } from 'lucide-react';
-import { StopStatus, LiveBus } from '@/types/admin';
+import { LiveMap } from '@/components/LiveMap';
+import { Bus, User, Route, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
+import { StopStatus, LiveBus, CatalogStop } from '@/types/admin';
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { getCatalogStops } from '@/lib/stopsCatalog';
 
 const stopStatusConfig: Record<StopStatus, { icon: string; label: string; className: string }> = {
   reached: { icon: '🟢', label: 'Reached', className: 'text-success' },
@@ -14,6 +16,7 @@ const stopStatusConfig: Record<StopStatus, { icon: string; label: string; classN
 
 export default function LiveMonitoring() {
   const [liveBuses, setLiveBuses] = useState<LiveBus[]>([]);
+  const [catalogStops, setCatalogStops] = useState<CatalogStop[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [showBusList, setShowBusList] = useState(false);
@@ -25,12 +28,16 @@ export default function LiveMonitoring() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const liveBusesSnapshot = await getDocs(query(collection(db, 'liveBuses'), orderBy('busNumber')));
+      const [liveBusesSnapshot, stops] = await Promise.all([
+        getDocs(query(collection(db, 'liveBuses'), orderBy('busNumber'))),
+        getCatalogStops(),
+      ]);
       const liveBusesData = liveBusesSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       })) as LiveBus[];
       setLiveBuses(liveBusesData);
+      setCatalogStops(stops);
       if (liveBusesData.length > 0 && !selectedBusId) {
         setSelectedBusId(liveBusesData[0].id);
       }
@@ -93,7 +100,6 @@ export default function LiveMonitoring() {
           {showBusList && (
             <div className="mt-2 rounded-lg border bg-card divide-y max-h-64 overflow-y-auto">
               {liveBuses.map((bus) => {
-                const currentStop = bus.stops.find(s => s.status === 'current');
                 const reachedCount = bus.stops.filter(s => s.status === 'reached').length;
 
                 return (
@@ -182,122 +188,149 @@ export default function LiveMonitoring() {
           </div>
         </div>
 
-        {/* Right Pane - Bus Details */}
+        {/* Right Pane - Map + Bus Details */}
         <div className="lg:col-span-8">
-          {selectedBus ? (
-            <div className="space-y-4 lg:space-y-6">
-              {/* Bus Info Card */}
-              <div className="rounded-lg border bg-card p-4 lg:p-6">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-6">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 lg:h-12 w-10 lg:w-12 items-center justify-center rounded-lg bg-primary/10 flex-shrink-0">
-                      <Bus className="h-5 lg:h-6 w-5 lg:w-6 text-primary" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs text-muted-foreground">Bus Number</p>
-                      <p className="text-base lg:text-lg font-semibold truncate">{selectedBus.busNumber}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 lg:h-12 w-10 lg:w-12 items-center justify-center rounded-lg bg-success/10 flex-shrink-0">
-                      <User className="h-5 lg:h-6 w-5 lg:w-6 text-success" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs text-muted-foreground">Driver</p>
-                      <p className="text-base lg:text-lg font-semibold truncate">{selectedBus.driverName}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 lg:h-12 w-10 lg:w-12 items-center justify-center rounded-lg bg-muted flex-shrink-0">
-                      <Route className="h-5 lg:h-6 w-5 lg:w-6 text-muted-foreground" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs text-muted-foreground">Route</p>
-                      <p className="text-base lg:text-lg font-semibold truncate">{selectedBus.routeName}</p>
-                    </div>
-                  </div>
-                </div>
+          <div className="space-y-4 lg:space-y-6">
+            {/* Map - always visible */}
+            <div style={{ height: selectedBus ? '400px' : '550px' }} className="transition-all duration-300">
+              <LiveMap
+                catalogStops={catalogStops}
+                liveBuses={liveBuses}
+                selectedBusId={selectedBusId}
+                onBusSelect={handleBusSelect}
+                className="h-full"
+              />
+            </div>
+
+            {/* No buses message - shown inside the map area when empty */}
+            {liveBuses.length === 0 && (
+              <div className="flex items-center justify-center gap-3 rounded-lg border bg-card px-4 py-4">
+                <MapPin className="h-5 w-5 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  No active buses — map shows all stops from the stop library
+                </p>
               </div>
+            )}
 
-              {/* Stops Progress */}
-              <div className="rounded-lg border bg-card">
-                <div className="border-b px-4 py-3">
-                  <h3 className="text-sm font-medium">Route Progress</h3>
+            {/* Bus Details - only when a bus is selected */}
+            {selectedBus && (
+              <>
+                {/* Bus Info Card */}
+                <div className="rounded-lg border bg-card p-4 lg:p-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-6">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 lg:h-12 w-10 lg:w-12 items-center justify-center rounded-lg bg-primary/10 flex-shrink-0">
+                        <Bus className="h-5 lg:h-6 w-5 lg:w-6 text-primary" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">Bus Number</p>
+                        <p className="text-base lg:text-lg font-semibold truncate">{selectedBus.busNumber}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 lg:h-12 w-10 lg:w-12 items-center justify-center rounded-lg bg-success/10 flex-shrink-0">
+                        <User className="h-5 lg:h-6 w-5 lg:w-6 text-success" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">Driver</p>
+                        <p className="text-base lg:text-lg font-semibold truncate">{selectedBus.driverName}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 lg:h-12 w-10 lg:w-12 items-center justify-center rounded-lg bg-muted flex-shrink-0">
+                        <Route className="h-5 lg:h-6 w-5 lg:w-6 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">Route</p>
+                        <p className="text-base lg:text-lg font-semibold truncate">{selectedBus.routeName}</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="p-4 max-h-[50vh] lg:max-h-none overflow-y-auto">
-                  <div className="relative">
-                    {/* Progress Line */}
-                    <div className="absolute left-[15px] lg:left-[19px] top-0 bottom-0 w-0.5 bg-border" />
 
-                    <div className="space-y-0">
-                      {selectedBus.stops.map((stop, index) => {
-                        const config = stopStatusConfig[stop.status];
-                        return (
-                          <div key={stop.id} className="relative flex items-start gap-3 lg:gap-4 pb-4 lg:pb-6 last:pb-0">
-                            {/* Status Icon */}
-                            <div className={cn(
-                              'relative z-10 flex h-8 lg:h-10 w-8 lg:w-10 items-center justify-center rounded-full border-2 bg-card flex-shrink-0',
-                              stop.status === 'reached' && 'border-success bg-success/10',
-                              stop.status === 'current' && 'border-primary bg-primary/10',
-                              stop.status === 'pending' && 'border-muted-foreground/30'
-                            )}>
-                              {stop.status === 'reached' && (
-                                <div className="h-2 lg:h-3 w-2 lg:w-3 rounded-full bg-success" />
-                              )}
-                              {stop.status === 'current' && (
-                                <div className="h-2 lg:h-3 w-2 lg:w-3 rounded-full bg-primary animate-pulse" />
-                              )}
-                              {stop.status === 'pending' && (
-                                <div className="h-2 lg:h-3 w-2 lg:w-3 rounded-full bg-muted-foreground/30" />
-                              )}
-                            </div>
+                {/* Stops Progress */}
+                <div className="rounded-lg border bg-card">
+                  <div className="border-b px-4 py-3">
+                    <h3 className="text-sm font-medium">Route Progress</h3>
+                  </div>
+                  <div className="p-4 max-h-[50vh] lg:max-h-none overflow-y-auto">
+                    <div className="relative">
+                      {/* Progress Line */}
+                      <div className="absolute left-[15px] lg:left-[19px] top-0 bottom-0 w-0.5 bg-border" />
 
-                            {/* Stop Info */}
-                            <div className="flex-1 pt-1 lg:pt-2 min-w-0">
-                              <div className="flex items-center justify-between gap-2 flex-wrap">
-                                <div className="flex items-center gap-2 flex-wrap min-w-0">
-                                  <span className="text-sm font-medium truncate">{stop.name}</span>
-                                  {stop.status === 'current' && (
-                                    <span className="status-badge status-current text-xs">
-                                      Current
-                                    </span>
-                                  )}
-                                </div>
-                                <span className={cn('text-xs lg:text-sm flex-shrink-0', config.className)}>
-                                  {config.label}
-                                </span>
+                      <div className="space-y-0">
+                        {selectedBus.stops.map((stop, index) => {
+                          const config = stopStatusConfig[stop.status];
+                          return (
+                            <div key={stop.id} className="relative flex items-start gap-3 lg:gap-4 pb-4 lg:pb-6 last:pb-0">
+                              {/* Status Icon */}
+                              <div className={cn(
+                                'relative z-10 flex h-8 lg:h-10 w-8 lg:w-10 items-center justify-center rounded-full border-2 bg-card flex-shrink-0',
+                                stop.status === 'reached' && 'border-success bg-success/10',
+                                stop.status === 'current' && 'border-primary bg-primary/10',
+                                stop.status === 'pending' && 'border-muted-foreground/30'
+                              )}>
+                                {stop.status === 'reached' && (
+                                  <div className="h-2 lg:h-3 w-2 lg:w-3 rounded-full bg-success" />
+                                )}
+                                {stop.status === 'current' && (
+                                  <div className="h-2 lg:h-3 w-2 lg:w-3 rounded-full bg-primary animate-pulse" />
+                                )}
+                                {stop.status === 'pending' && (
+                                  <div className="h-2 lg:h-3 w-2 lg:w-3 rounded-full bg-muted-foreground/30" />
+                                )}
                               </div>
-                              <p className="text-xs text-muted-foreground">Stop #{stop.order}</p>
+
+                              {/* Stop Info */}
+                              <div className="flex-1 pt-1 lg:pt-2 min-w-0">
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                    <span className="text-sm font-medium truncate">{stop.name}</span>
+                                    {stop.status === 'current' && (
+                                      <span className="status-badge status-current text-xs">
+                                        Current
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className={cn('text-xs lg:text-sm flex-shrink-0', config.className)}>
+                                    {config.label}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">Stop #{stop.order}</p>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Legend */}
-              <div className="flex items-center justify-center gap-4 lg:gap-6 rounded-lg border bg-muted/30 px-3 lg:px-4 py-2 lg:py-3 flex-wrap">
-                <div className="flex items-center gap-1.5 lg:gap-2">
-                  <span className="text-base lg:text-lg">🟢</span>
-                  <span className="text-xs lg:text-sm text-muted-foreground">Reached</span>
+                {/* Legend */}
+                <div className="flex items-center justify-center gap-4 lg:gap-6 rounded-lg border bg-muted/30 px-3 lg:px-4 py-2 lg:py-3 flex-wrap">
+                  <div className="flex items-center gap-1.5 lg:gap-2">
+                    <span className="text-base lg:text-lg">🟢</span>
+                    <span className="text-xs lg:text-sm text-muted-foreground">Reached</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 lg:gap-2">
+                    <span className="text-base lg:text-lg">🔵</span>
+                    <span className="text-xs lg:text-sm text-muted-foreground">Current</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 lg:gap-2">
+                    <span className="text-base lg:text-lg">⭕</span>
+                    <span className="text-xs lg:text-sm text-muted-foreground">Pending</span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5 lg:gap-2">
-                  <span className="text-base lg:text-lg">🔵</span>
-                  <span className="text-xs lg:text-sm text-muted-foreground">Current</span>
-                </div>
-                <div className="flex items-center gap-1.5 lg:gap-2">
-                  <span className="text-base lg:text-lg">⭕</span>
-                  <span className="text-xs lg:text-sm text-muted-foreground">Pending</span>
-                </div>
+              </>
+            )}
+
+            {/* No bus selected but buses exist */}
+            {!selectedBus && liveBuses.length > 0 && (
+              <div className="flex h-16 items-center justify-center rounded-lg border bg-card">
+                <p className="text-muted-foreground text-sm">Select a bus to view route details</p>
               </div>
-            </div>
-          ) : (
-            <div className="flex h-48 lg:h-64 items-center justify-center rounded-lg border bg-card">
-              <p className="text-muted-foreground text-sm">Select a bus to view details</p>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </AdminLayout>

@@ -48,3 +48,38 @@ export function isValidCoordinatePair(lat?: number, lng?: number): boolean {
   if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return false;
   return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
 }
+
+/** Normalized coordinate key for display and exact lookups. */
+export function getStopCoordinateKey(latitude?: number, longitude?: number): string | null {
+  if (!isValidCoordinatePair(latitude, longitude)) return null;
+  return `${latitude!.toFixed(4)},${longitude!.toFixed(4)}`;
+}
+
+export const STOP_DUPLICATE_DISTANCE_METERS = 50;
+
+export function getDistanceMeters(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number {
+  const earthRadiusMeters = 6371000;
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+  const deltaLat = toRadians(lat2 - lat1);
+  const deltaLng = toRadians(lng2 - lng1);
+  const a =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(deltaLng / 2) ** 2;
+  return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+export function areCoordinatesWithinDistance(
+  lat1?: number,
+  lng1?: number,
+  lat2?: number,
+  lng2?: number,
+  maxDistanceMeters = STOP_DUPLICATE_DISTANCE_METERS
+): boolean {
+  if (!isValidCoordinatePair(lat1, lng1) || !isValidCoordinatePair(lat2, lng2)) return false;
+  return getDistanceMeters(lat1!, lng1!, lat2!, lng2!) <= maxDistanceMeters;
+}

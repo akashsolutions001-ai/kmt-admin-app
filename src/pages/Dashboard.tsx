@@ -4,6 +4,7 @@ import { StatCard } from '@/components/StatCard';
 import { Bus, Users, Route, Radio, MapPin, AlertTriangle, MessageSquareWarning, Calendar } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { collection, getDocs } from 'firebase/firestore';
+import { getCatalogStops } from '@/lib/stopsCatalog';
 import { Bus as BusType, Driver, Route as RouteType, LiveBus, Complaint } from '@/types/admin';
 
 export default function Dashboard() {
@@ -40,7 +41,9 @@ export default function Dashboard() {
       const routesSnapshot = await getDocs(collection(db, 'routes'));
       const routesData = routesSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as RouteType[];
       setTotalRoutes(routesData.length);
-      setTotalStops(routesData.reduce((acc, r) => acc + (r.stops?.length ?? 0), 0));
+
+      const catalogStops = await getCatalogStops();
+      setTotalStops(catalogStops.length);
 
       const liveBusesSnapshot = await getDocs(collection(db, 'liveBuses'));
       const liveBusesData = liveBusesSnapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as LiveBus[];
@@ -81,7 +84,7 @@ export default function Dashboard() {
         <StatCard title="Running Trips" value={runningTrips} icon={Route} description="Live now" variant="success" />
         <StatCard title="Drivers On Duty" value={driversOnDuty} icon={Users} description={`${totalDrivers} total`} />
         <StatCard title="Routes" value={totalRoutes} icon={Route} description="City routes" />
-        <StatCard title="Stops" value={totalStops} icon={MapPin} description="Across all routes" />
+        <StatCard title="Stops" value={totalStops} icon={MapPin} description="Total stops" />
         <StatCard title="Delayed Buses" value={delayedBuses} icon={AlertTriangle} description="Needs attention" variant={delayedBuses > 0 ? 'warning' : undefined} />
         <StatCard title="Complaints" value={openComplaints} icon={MessageSquareWarning} description="Open tickets" />
         <StatCard title="Today's Trips" value={todayTrips} icon={Calendar} description="Scheduled today" />

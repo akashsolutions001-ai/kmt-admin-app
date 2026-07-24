@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -33,7 +34,8 @@ import {
 } from 'lucide-react';
 import { Route, Stop, CatalogStop } from '@/types/admin';
 import { cn } from '@/lib/utils';
-import { getCatalogStops, addCatalogStop } from '@/lib/stopsCatalog';
+import { areCoordinatesWithinDistance } from '@/lib/mapUtils';
+import { getCatalogStops, addCatalogStop, findNearbyCatalogStop } from '@/lib/stopsCatalog';
 import { useStopLocationForm, parseStopFormCoordinates } from '@/hooks/useStopLocationForm';
 import { toast } from 'sonner';
 import { db } from '@/lib/firebase';
@@ -48,6 +50,52 @@ import {
   query,
   orderBy,
 } from 'firebase/firestore';
+
+type PendingReorderAction =
+  | { type: 'move'; stopIds: string[]; direction: 'up' | 'down'; description: string }
+  | { type: 'serial'; stopIds: string[]; targetOrder: number; description: string };
+
+function reorderStopsByPosition(stops: Stop[], stopIds: string[], targetOrder: number): Stop[] {
+  const selectedSet = new Set(stopIds);
+  const selected = stops.filter((stop) => selectedSet.has(stop.id));
+  if (selected.length === 0) return stops;
+
+  const remaining = stops.filter((stop) => !selectedSet.has(stop.id));
+  const insertIndex = Math.max(0, Math.min(targetOrder - 1, remaining.length));
+  const reordered = [...remaining];
+  reordered.splice(insertIndex, 0, ...selected);
+  return reordered.map((stop, index) => ({ ...stop, order: index + 1 }));
+}
+
+function moveStopsInDirection(
+  stops: Stop[],
+  stopIds: string[],
+  direction: 'up' | 'down'
+): Stop[] | null {
+  const selectedSet = new Set(stopIds);
+  const indices = stops
+    .map((stop, index) => (selectedSet.has(stop.id) ? index : -1))
+    .filter((index) => index >= 0);
+
+  if (indices.length === 0) return null;
+
+  const firstIndex = Math.min(...indices);
+  const lastIndex = Math.max(...indices);
+
+  if (direction === 'up' && firstIndex === 0) return null;
+  if (direction === 'down' && lastIndex === stops.length - 1) return null;
+
+  const nextStops = [...stops];
+  const selectedBlock = nextStops.splice(firstIndex, indices.length);
+
+  if (direction === 'up') {
+    nextStops.splice(firstIndex - 1, 0, ...selectedBlock);
+  } else {
+    nextStops.splice(firstIndex + 1, 0, ...selectedBlock);
+  }
+
+  return nextStops.map((stop, index) => ({ ...stop, order: index + 1 }));
+}
 
 export default function Routes() {
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -67,6 +115,11 @@ export default function Routes() {
   const [catalogStops, setCatalogStops] = useState<CatalogStop[]>([]);
   const [stopAddMode, setStopAddMode] = useState<'new' | 'library'>('new');
   const [selectedCatalogStopId, setSelectedCatalogStopId] = useState('');
+  const [selectedStopIds, setSelectedStopIds] = useState<string[]>([]);
+  const [editingOrderStopId, setEditingOrderStopId] = useState<string | null>(null);
+  const [orderInputValue, setOrderInputValue] = useState('');
+  const [isReorderConfirmOpen, setIsReorderConfirmOpen] = useState(false);
+  const [pendingReorder, setPendingReorder] = useState<PendingReorderAction | null>(null);
 
   const {
     formData: stopFormData,
@@ -108,6 +161,37 @@ export default function Routes() {
   };
 
   const selectedRoute = routes.find(r => r.id === selectedRouteId);
+
+  const matchedCatalogStop = useMemo(() => {
+    if (stopAddMode === 'library' && !editingStop) return null;
+    const { parsedLat, parsedLng } = parseStopFormCoordinates(stopFormData);
+    return findNearbyCatalogStop(
+      catalogStops.filter((stop) => stop.id !== editingStop?.catalogStopId),
+      parsedLat,
+      parsedLng
+    ) ?? null;
+  }, [stopFormData, catalogStops, editingStop, stopAddMode]);
+
+  useEffect(() => {
+    if (editingStop || stopAddMode === 'library' || !matchedCatalogStop) return;
+    if (stopFormData.name !== matchedCatalogStop.name) {
+      setStopFormData((prev) => ({ ...prev, name: matchedCatalogStop.name }));
+    }
+  }, [matchedCatalogStop, editingStop, stopAddMode, stopFormData.name, setStopFormData]);
+
+  useEffect(() => {
+    setSelectedStopIds([]);
+    setEditingOrderStopId(null);
+  }, [selectedRouteId]);
+
+  const toggleStopSelection = (stopId: string, checked: boolean) => {
+    setSelectedStopIds((prev) =>
+      checked ? [...new Set([...prev, stopId])] : prev.filter((id) => id !== stopId)
+    );
+  };
+
+  const getReorderStopIds = (stopId: string) =>
+    selectedStopIds.length > 0 && selectedStopIds.includes(stopId) ? selectedStopIds : [stopId];
 
   const handleSelectRoute = (routeId: string) => {
     setSelectedRouteId(routeId);
@@ -208,7 +292,14 @@ export default function Routes() {
     if (!catalogStop) return;
 
     const alreadyOnRoute = selectedRoute.stops.some(
-      (s) => s.catalogStopId === catalogStop.id || s.name === catalogStop.name
+      (s) =>
+        s.catalogStopId === catalogStop.id ||
+        areCoordinatesWithinDistance(
+          s.latitude,
+          s.longitude,
+          catalogStop.latitude,
+          catalogStop.longitude
+        )
     );
     if (alreadyOnRoute) {
       toast.error('This stop is already on the route');
@@ -252,28 +343,51 @@ export default function Routes() {
       const { parsedLat, parsedLng } = parseStopFormCoordinates(stopFormData);
 
       if (editingStop) {
-        updatedStops = selectedRoute.stops.map(s =>
+        const nearbyStop = findNearbyCatalogStop(
+          catalogStops.filter((stop) => stop.id !== editingStop.catalogStopId),
+          parsedLat,
+          parsedLng
+        );
+        updatedStops = selectedRoute.stops.map((s) =>
           s.id === editingStop.id
             ? {
-              ...s,
-              name: stopFormData.name,
-              ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
-              ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
-            }
+                ...s,
+                name: nearbyStop?.name ?? stopFormData.name.trim(),
+                ...(nearbyStop ? { catalogStopId: nearbyStop.id } : {}),
+                ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
+                ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
+              }
             : s
         );
       } else {
-        // Save to stops collection (catalog) first, so the stop is available in the library
-        const catalogPayload = {
-          name: stopFormData.name,
-          ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
-          ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
-        };
-        const catalogId = await addCatalogStop(catalogPayload);
+        const nearbyStop = matchedCatalogStop ?? findNearbyCatalogStop(catalogStops, parsedLat, parsedLng);
+        let catalogId: string;
+        let stopName = stopFormData.name.trim();
+
+        if (nearbyStop) {
+          catalogId = nearbyStop.id;
+          stopName = nearbyStop.name;
+        } else {
+          catalogId = await addCatalogStop({
+            name: stopName,
+            ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
+            ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
+          });
+        }
+
+        const alreadyOnRoute = selectedRoute.stops.some(
+          (s) =>
+            s.catalogStopId === catalogId ||
+            areCoordinatesWithinDistance(s.latitude, s.longitude, parsedLat, parsedLng)
+        );
+        if (alreadyOnRoute) {
+          toast.error(`"${stopName}" is already on this route`);
+          return;
+        }
 
         const newStop: Stop = {
           id: `${selectedRoute.id}-${Date.now()}`,
-          name: stopFormData.name,
+          name: stopName,
           order: selectedRoute.stops.length + 1,
           catalogStopId: catalogId,
           ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
@@ -288,7 +402,13 @@ export default function Routes() {
         updatedAt: Timestamp.now(),
       });
       setIsStopFormOpen(false);
-      toast.success(editingStop ? 'Stop updated' : 'Stop added and saved to library');
+      toast.success(
+        editingStop
+          ? 'Stop updated'
+          : matchedCatalogStop
+            ? `Added existing stop "${matchedCatalogStop.name}" to route`
+            : 'Stop added and saved to library'
+      );
       loadData();
     } catch (error) {
       console.error('Error saving stop:', error);
@@ -316,29 +436,90 @@ export default function Routes() {
     }
   };
 
-  const moveStop = async (stopId: string, direction: 'up' | 'down') => {
+  const requestMoveStop = (stopId: string, direction: 'up' | 'down') => {
     if (!selectedRoute) return;
 
+    const stopIds = getReorderStopIds(stopId);
+    const preview = moveStopsInDirection(selectedRoute.stops, stopIds, direction);
+    if (!preview) return;
+
+    const stopNames = selectedRoute.stops
+      .filter((stop) => stopIds.includes(stop.id))
+      .map((stop) => stop.name)
+      .join(', ');
+
+    setPendingReorder({
+      type: 'move',
+      stopIds,
+      direction,
+      description:
+        stopIds.length > 1
+          ? `Move ${stopIds.length} selected stops (${stopNames}) ${direction === 'up' ? 'up' : 'down'}?`
+          : `Move "${stopNames}" ${direction === 'up' ? 'up' : 'down'}?`,
+    });
+    setIsReorderConfirmOpen(true);
+  };
+
+  const submitOrderChange = (stop: Stop) => {
+    if (!selectedRoute) return;
+
+    const targetOrder = parseInt(orderInputValue, 10);
+    setEditingOrderStopId(null);
+
+    if (Number.isNaN(targetOrder) || targetOrder < 1 || targetOrder > selectedRoute.stops.length) {
+      toast.error(`Enter a position between 1 and ${selectedRoute.stops.length}`);
+      return;
+    }
+
+    const stopIds = getReorderStopIds(stop.id);
+    const currentOrder = stop.order;
+    if (stopIds.length === 1 && targetOrder === currentOrder) return;
+
+    const stopNames = selectedRoute.stops
+      .filter((item) => stopIds.includes(item.id))
+      .map((item) => item.name)
+      .join(', ');
+
+    setPendingReorder({
+      type: 'serial',
+      stopIds,
+      targetOrder,
+      description:
+        stopIds.length > 1
+          ? `Move ${stopIds.length} selected stops (${stopNames}) to position ${targetOrder}?`
+          : `Change "${stop.name}" from position ${currentOrder} to ${targetOrder}?`,
+    });
+    setIsReorderConfirmOpen(true);
+  };
+
+  const confirmReorder = async () => {
+    if (!selectedRoute || !pendingReorder) return;
+
     try {
-      const stops = [...selectedRoute.stops];
-      const index = stops.findIndex(s => s.id === stopId);
+      const reorderedStops =
+        pendingReorder.type === 'move'
+          ? moveStopsInDirection(selectedRoute.stops, pendingReorder.stopIds, pendingReorder.direction)
+          : reorderStopsByPosition(
+              selectedRoute.stops,
+              pendingReorder.stopIds,
+              pendingReorder.targetOrder
+            );
 
-      if (direction === 'up' && index > 0) {
-        [stops[index - 1], stops[index]] = [stops[index], stops[index - 1]];
-      } else if (direction === 'down' && index < stops.length - 1) {
-        [stops[index], stops[index + 1]] = [stops[index + 1], stops[index]];
-      }
-
-      const reorderedStops = stops.map((s, i) => ({ ...s, order: i + 1 }));
+      if (!reorderedStops) return;
 
       const routeRef = doc(db, 'routes', selectedRoute.id);
       await updateDoc(routeRef, {
         stops: reorderedStops,
         updatedAt: Timestamp.now(),
       });
+
+      setIsReorderConfirmOpen(false);
+      setPendingReorder(null);
+      toast.success('Stop order updated');
       loadData();
     } catch (error) {
-      console.error('Error moving stop:', error);
+      console.error('Error reordering stops:', error);
+      toast.error('Failed to update stop order');
     }
   };
 
@@ -357,10 +538,12 @@ export default function Routes() {
         ...d.data(),
       })) as Route[];
 
-      // Build a name→catalogId map to avoid duplicates
-      const catalogByName = new Map<string, string>(
-        existingCatalog.map((s) => [s.name.toLowerCase().trim(), s.id])
-      );
+      // Build name→catalogId map and keep catalog list for 50 m lookups
+      const catalogByName = new Map<string, string>();
+      const catalogEntries = [...existingCatalog];
+      for (const stop of catalogEntries) {
+        catalogByName.set(stop.name.toLowerCase().trim(), stop.id);
+      }
 
       let migratedCount = 0;
 
@@ -374,7 +557,8 @@ export default function Routes() {
             if (stop.catalogStopId) return stop;
 
             const nameKey = stop.name.toLowerCase().trim();
-            let catalogId = catalogByName.get(nameKey);
+            const nearbyStop = findNearbyCatalogStop(catalogEntries, stop.latitude, stop.longitude);
+            let catalogId = nearbyStop?.id ?? catalogByName.get(nameKey);
 
             if (!catalogId) {
               // Create a new catalog entry
@@ -384,6 +568,13 @@ export default function Routes() {
                 ...(stop.longitude != null ? { longitude: stop.longitude } : {}),
               };
               catalogId = await addCatalogStop(payload);
+              const newStop: CatalogStop = {
+                id: catalogId,
+                name: stop.name,
+                latitude: stop.latitude,
+                longitude: stop.longitude,
+              };
+              catalogEntries.push(newStop);
               catalogByName.set(nameKey, catalogId);
             }
 
@@ -547,38 +738,90 @@ export default function Routes() {
 
               {/* Stops List */}
               <div className="rounded-lg border bg-card">
-                <div className="flex items-center justify-between border-b px-4 py-3">
-                  <h3 className="text-sm font-medium">Stops ({selectedRoute.stops.length})</h3>
-                  <Button size="sm" onClick={handleAddStop}>
-                    <Plus className="h-4 w-4 sm:mr-2" />
-                    <span className="hidden sm:inline">Add Stop</span>
-                  </Button>
+                <div className="flex items-center justify-between border-b px-4 py-3 gap-2">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-medium">Stops ({selectedRoute.stops.length})</h3>
+                    {selectedStopIds.length > 0 && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {selectedStopIds.length} selected — use arrows or edit serial to reorder together
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {selectedStopIds.length > 0 && (
+                      <Button variant="ghost" size="sm" onClick={() => setSelectedStopIds([])}>
+                        Clear
+                      </Button>
+                    )}
+                    <Button size="sm" onClick={handleAddStop}>
+                      <Plus className="h-4 w-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Add Stop</span>
+                    </Button>
+                  </div>
                 </div>
                 <div className="divide-y max-h-[50vh] lg:max-h-none overflow-y-auto">
                   {selectedRoute.stops.map((stop, index) => (
-                    <div key={stop.id} className="flex items-center justify-between px-3 sm:px-4 py-3 gap-2">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full bg-primary text-xs sm:text-sm font-medium text-primary-foreground flex-shrink-0">
-                          {stop.order}
-                        </span>
+                    <div
+                      key={stop.id}
+                      className={cn(
+                        'flex items-center justify-between px-3 sm:px-4 py-3 gap-2',
+                        selectedStopIds.includes(stop.id) && 'bg-muted/40'
+                      )}
+                    >
+                      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                        <Checkbox
+                          checked={selectedStopIds.includes(stop.id)}
+                          onCheckedChange={(checked) => toggleStopSelection(stop.id, checked === true)}
+                          aria-label={`Select ${stop.name}`}
+                        />
+                        {editingOrderStopId === stop.id ? (
+                          <Input
+                            type="number"
+                            min={1}
+                            max={selectedRoute.stops.length}
+                            value={orderInputValue}
+                            onChange={(e) => setOrderInputValue(e.target.value)}
+                            onBlur={() => submitOrderChange(stop)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') submitOrderChange(stop);
+                              if (e.key === 'Escape') setEditingOrderStopId(null);
+                            }}
+                            className="h-8 w-14 px-2 text-center"
+                            autoFocus
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingOrderStopId(stop.id);
+                              setOrderInputValue(String(stop.order));
+                            }}
+                            className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full bg-primary text-xs sm:text-sm font-medium text-primary-foreground flex-shrink-0 hover:opacity-90"
+                            title="Change stop position"
+                          >
+                            {stop.order}
+                          </button>
+                        )}
                         <span className="text-sm truncate">{stop.name}</span>
                       </div>
                       <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => moveStop(stop.id, 'up')}
-                          disabled={index === 0}
+                          onClick={() => requestMoveStop(stop.id, 'up')}
+                          disabled={!moveStopsInDirection(selectedRoute.stops, getReorderStopIds(stop.id), 'up')}
                           className="h-8 w-8 p-0"
+                          title="Move up"
                         >
                           <ChevronUp className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => moveStop(stop.id, 'down')}
-                          disabled={index === selectedRoute.stops.length - 1}
+                          onClick={() => requestMoveStop(stop.id, 'down')}
+                          disabled={!moveStopsInDirection(selectedRoute.stops, getReorderStopIds(stop.id), 'down')}
                           className="h-8 w-8 p-0"
+                          title="Move down"
                         >
                           <ChevronDown className="h-4 w-4" />
                         </Button>
@@ -722,6 +965,7 @@ export default function Routes() {
                 onCoordinateChange={handleCoordinateChange}
                 onUseCurrentLocation={handleUseCurrentLocation}
                 nameInputId="routeStopName"
+                matchedCatalogStop={matchedCatalogStop}
               />
             )}
           </div>
@@ -739,7 +983,11 @@ export default function Routes() {
               </Button>
             ) : (
               <Button onClick={handleSaveStop} disabled={!stopFormData.name} className="w-full sm:w-auto">
-                {editingStop ? 'Save Changes' : 'Add Stop'}
+                {editingStop
+                  ? 'Save Changes'
+                  : matchedCatalogStop
+                    ? `Add "${matchedCatalogStop.name}"`
+                    : 'Add Stop'}
               </Button>
             )}
           </DialogFooter>
@@ -766,6 +1014,18 @@ export default function Routes() {
         confirmLabel="Delete Stop"
         onConfirm={confirmDeleteStop}
         variant="destructive"
+      />
+
+      <ConfirmDialog
+        open={isReorderConfirmOpen}
+        onOpenChange={(open) => {
+          setIsReorderConfirmOpen(open);
+          if (!open) setPendingReorder(null);
+        }}
+        title="Confirm Stop Order Change"
+        description={pendingReorder?.description ?? 'Apply this stop order change?'}
+        confirmLabel="Confirm Change"
+        onConfirm={confirmReorder}
       />
     </AdminLayout>
   );

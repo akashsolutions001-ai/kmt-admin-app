@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import 'leaflet/dist/leaflet.css';
 
 @tailwind base;
 @tailwind components;
@@ -302,3 +303,100 @@
   }
 }
 
+/* ── LiveMap Styles ───────────────────────────────────────────────── */
+
+.live-map-container {
+  position: relative;
+  width: 100%;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid hsl(var(--border));
+}
+
+.live-map {
+  width: 100%;
+  height: 100%;
+  min-height: 350px;
+  z-index: 0;
+}
+
+.live-map-stop-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+.live-map-bus-icon,
+.live-map-bus-icon-selected {
+  background: transparent !important;
+  border: none !important;
+}
+
+.stop-name-tooltip {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+.stop-name-tooltip::before {
+  display: none !important; /* hide the tooltip pointer arrow */
+}
+
+.live-map-tooltip {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: #0f172a;
+  text-shadow: 
+    1px 1px 0px white, 
+    -1px -1px 0px white, 
+    1px -1px 0px white, 
+    -1px 1px 0px white,
+    0px 2px 4px rgba(0,0,0,0.5);
+}
+
+.live-map-bus-tooltip {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  color: #1e293b;
+  line-height: 1.4;
+}
+
+.live-map-legend {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 1000;
+  display: flex;
+  gap: 12px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  font-size: 12px;
+  font-family: 'Inter', sans-serif;
+  color: #475569;
+}
+
+.dark .live-map-legend {
+  background: rgba(30, 41, 59, 0.92);
+  color: #94a3b8;
+}
+
+.live-map-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.live-map-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5); }
+  50% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+}
