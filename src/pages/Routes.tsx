@@ -31,6 +31,7 @@ import {
   Route as RouteIcon,
   ArrowLeft,
   DatabaseZap,
+  Search,
 } from 'lucide-react';
 import { Route, Stop, CatalogStop } from '@/types/admin';
 import { cn } from '@/lib/utils';
@@ -114,7 +115,8 @@ export default function Routes() {
   const [routeFormData, setRouteFormData] = useState({ name: '', startingPoint: '' });
   const [catalogStops, setCatalogStops] = useState<CatalogStop[]>([]);
   const [stopAddMode, setStopAddMode] = useState<'new' | 'library'>('new');
-  const [selectedCatalogStopId, setSelectedCatalogStopId] = useState('');
+  const [selectedCatalogStopIds, setSelectedCatalogStopIds] = useState<string[]>([]);
+  const [stopSearchQuery, setStopSearchQuery] = useState('');
   const [selectedStopIds, setSelectedStopIds] = useState<string[]>([]);
   const [editingOrderStopId, setEditingOrderStopId] = useState<string | null>(null);
   const [orderInputValue, setOrderInputValue] = useState('');
@@ -267,7 +269,8 @@ export default function Routes() {
   const handleAddStop = () => {
     setEditingStop(null);
     setStopAddMode('new');
-    setSelectedCatalogStopId('');
+    setSelectedCatalogStopIds([]);
+    setStopSearchQuery('');
     resetStopForm();
     setIsStopFormOpen(true);
   };
@@ -286,43 +289,57 @@ export default function Routes() {
   };
 
   const handleAddFromLibrary = async () => {
-    if (!selectedRoute || !selectedCatalogStopId) return;
+    if (!selectedRoute || selectedCatalogStopIds.length === 0) return;
 
-    const catalogStop = catalogStops.find((s) => s.id === selectedCatalogStopId);
-    if (!catalogStop) return;
+    const stopsToAdd = catalogStops.filter((s) => selectedCatalogStopIds.includes(s.id));
+    if (stopsToAdd.length === 0) return;
 
-    const alreadyOnRoute = selectedRoute.stops.some(
-      (s) =>
-        s.catalogStopId === catalogStop.id ||
-        areCoordinatesWithinDistance(
-          s.latitude,
-          s.longitude,
-          catalogStop.latitude,
-          catalogStop.longitude
-        )
-    );
-    if (alreadyOnRoute) {
-      toast.error('This stop is already on the route');
+    const newStops: Stop[] = [];
+    const duplicateNames: string[] = [];
+
+    stopsToAdd.forEach((catalogStop) => {
+      const alreadyOnRoute = selectedRoute.stops.some(
+        (s) =>
+          s.catalogStopId === catalogStop.id ||
+          areCoordinatesWithinDistance(
+            s.latitude,
+            s.longitude,
+            catalogStop.latitude,
+            catalogStop.longitude
+          )
+      );
+      if (alreadyOnRoute) {
+        duplicateNames.push(catalogStop.name);
+      } else {
+        newStops.push({
+          id: `${selectedRoute.id}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          name: catalogStop.name,
+          order: selectedRoute.stops.length + newStops.length + 1,
+          catalogStopId: catalogStop.id,
+          ...(catalogStop.latitude != null ? { latitude: catalogStop.latitude } : {}),
+          ...(catalogStop.longitude != null ? { longitude: catalogStop.longitude } : {}),
+        });
+      }
+    });
+
+    if (newStops.length === 0) {
+      toast.error('Selected stops are already on the route');
       return;
     }
 
     try {
-      const newStop: Stop = {
-        id: `${selectedRoute.id}-${Date.now()}`,
-        name: catalogStop.name,
-        order: selectedRoute.stops.length + 1,
-        catalogStopId: catalogStop.id,
-        ...(catalogStop.latitude != null ? { latitude: catalogStop.latitude } : {}),
-        ...(catalogStop.longitude != null ? { longitude: catalogStop.longitude } : {}),
-      };
-
       const routeRef = doc(db, 'routes', selectedRoute.id);
       await updateDoc(routeRef, {
-        stops: [...selectedRoute.stops, newStop],
+        stops: [...selectedRoute.stops, ...newStops],
         updatedAt: Timestamp.now(),
       });
       setIsStopFormOpen(false);
-      toast.success(`"${catalogStop.name}" added to route`);
+      
+      if (duplicateNames.length > 0) {
+        toast.success(`Added ${newStops.length} stop(s). Skipped ${duplicateNames.length} duplicate(s).`);
+      } else {
+        toast.success(`Added ${newStops.length} stop(s) to route`);
+      }
       loadData();
     } catch (error) {
       console.error('Error adding stop from library:', error);
@@ -934,25 +951,56 @@ export default function Routes() {
 
             {!editingStop && stopAddMode === 'library' ? (
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Select stop from library</Label>
-                  <Select value={selectedCatalogStopId || undefined} onValueChange={setSelectedCatalogStopId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={catalogStops.length === 0 ? 'No stops in library' : 'Choose a saved stop...'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {catalogStops.map((stop) => (
-                        <SelectItem key={stop.id} value={stop.id}>
-                          {stop.name}
-                          {stop.latitude != null && stop.longitude != null
-                            ? ` (${stop.latitude.toFixed(4)}, ${stop.longitude.toFixed(4)})`
-                            : ''}
-                        </SelectItem>
+                <div className="space-y-3">
+                  <Label>Select stops from library</Label>
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search stops..."
+                      className="pl-9"
+                      value={stopSearchQuery}
+                      onChange={(e) => setStopSearchQuery(e.target.value)}
+                    />
+                  </div>
+                  <div className="rounded-md border p-0 max-h-[250px] overflow-y-auto">
+                    {catalogStops
+                      .filter(stop => stop.name.toLowerCase().includes(stopSearchQuery.toLowerCase()))
+                      .map((stop) => (
+                        <div key={stop.id} className="flex flex-row items-center space-x-3 p-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50" onClick={() => {
+                          setSelectedCatalogStopIds(prev => 
+                            prev.includes(stop.id)
+                              ? prev.filter(id => id !== stop.id)
+                              : [...prev, stop.id]
+                          )
+                        }}>
+                          <Checkbox
+                            checked={selectedCatalogStopIds.includes(stop.id)}
+                            onCheckedChange={(checked) => {
+                              setSelectedCatalogStopIds(prev => 
+                                checked 
+                                  ? [...prev, stop.id]
+                                  : prev.filter(id => id !== stop.id)
+                              )
+                            }}
+                          />
+                          <div className="text-sm font-medium flex-1">
+                            {stop.name}
+                            {stop.latitude != null && stop.longitude != null && (
+                              <span className="text-muted-foreground ml-2 text-xs font-normal">
+                                ({stop.latitude.toFixed(4)}, {stop.longitude.toFixed(4)})
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       ))}
-                    </SelectContent>
-                  </Select>
+                    {catalogStops.filter(stop => stop.name.toLowerCase().includes(stopSearchQuery.toLowerCase())).length === 0 && (
+                      <div className="p-4 text-center text-sm text-muted-foreground">
+                        No stops found.
+                      </div>
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground">
-                    Stops are managed in the Stops section. Pick one to add to this route.
+                    Stops are managed in the Stops section. Pick one or more to add to this route.
                   </p>
                 </div>
               </div>
@@ -976,10 +1024,10 @@ export default function Routes() {
             {!editingStop && stopAddMode === 'library' ? (
               <Button
                 onClick={handleAddFromLibrary}
-                disabled={!selectedCatalogStopId || catalogStops.length === 0}
+                disabled={selectedCatalogStopIds.length === 0 || catalogStops.length === 0}
                 className="w-full sm:w-auto"
               >
-                Add to Route
+                Add {selectedCatalogStopIds.length > 0 ? `(${selectedCatalogStopIds.length}) ` : ''}to Route
               </Button>
             ) : (
               <Button onClick={handleSaveStop} disabled={!stopFormData.name} className="w-full sm:w-auto">
