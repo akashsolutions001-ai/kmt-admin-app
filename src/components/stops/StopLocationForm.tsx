@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { ExternalLink, Loader2, MapPin, Navigation } from 'lucide-react';
 import { getGoogleMapsUrl, getOpenStreetMapEmbedUrl } from '@/lib/mapUtils';
 import type { StopFormValues } from '@/hooks/useStopLocationForm';
@@ -11,6 +12,7 @@ interface StopLocationFormProps {
   isLocating: boolean;
   parsedCoords: { lat: number; lng: number } | null;
   onNameChange: (name: string) => void;
+  onDescriptionChange: (description: string) => void;
   onCoordinateChange: (field: 'latitude' | 'longitude', value: string) => void;
   onUseCurrentLocation: () => void;
   nameInputId?: string;
@@ -23,6 +25,7 @@ export function StopLocationForm({
   isLocating,
   parsedCoords,
   onNameChange,
+  onDescriptionChange,
   onCoordinateChange,
   onUseCurrentLocation,
   nameInputId = 'stopName',
@@ -48,6 +51,21 @@ export function StopLocationForm({
           value={formData.name}
           onChange={(e) => onNameChange(e.target.value)}
           placeholder="e.g., Main Market"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`${nameInputId}-description`}>
+          Description{' '}
+          <span className="text-muted-foreground font-normal text-xs">(optional)</span>
+        </Label>
+        <Textarea
+          id={`${nameInputId}-description`}
+          value={formData.description}
+          onChange={(e) => onDescriptionChange(e.target.value)}
+          placeholder="e.g., Near the main entrance, opposite the bus shelter"
+          rows={2}
+          className="resize-none"
         />
       </div>
 

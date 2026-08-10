@@ -6,12 +6,14 @@ export interface StopFormValues {
   name: string;
   latitude: string;
   longitude: string;
+  description: string;
 }
 
 export const emptyStopFormValues = (): StopFormValues => ({
   name: '',
   latitude: '',
   longitude: '',
+  description: '',
 });
 
 export function useStopLocationForm(initial?: Partial<StopFormValues>) {

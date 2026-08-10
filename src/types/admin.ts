@@ -31,6 +31,7 @@ export interface Stop {
   catalogStopId?: string;
   routeId?: string;
   routeName?: string;
+  description?: string;
 }
 
 /** Standalone bus stop in the `stops` Firestore collection */
@@ -41,6 +42,7 @@ export interface CatalogStop {
   longitude?: number;
   mapLink?: string;
   address?: string;
+  description?: string;
 }
 
 export interface Route {

@@ -118,6 +118,42 @@ export async function updateCatalogStop(
     ...updates,
     updatedAt: Timestamp.now(),
   });
+
+  // Also update this stop in all routes
+  const routesSnap = await getDocs(collection(db, 'routes'));
+  const batchUpdates: Promise<void>[] = [];
+  
+  for (const docSnap of routesSnap.docs) {
+    const routeData = docSnap.data();
+    if (!routeData.stops) continue;
+    
+    let routeChanged = false;
+    const updatedStops = routeData.stops.map((stop: any) => {
+      if (stop.catalogStopId === id) {
+        routeChanged = true;
+        const cascadeUpdate: any = { ...stop };
+        if ('name' in updates) cascadeUpdate.name = updates.name;
+        if ('latitude' in updates) cascadeUpdate.latitude = updates.latitude;
+        if ('longitude' in updates) cascadeUpdate.longitude = updates.longitude;
+        if ('description' in updates) cascadeUpdate.description = updates.description;
+        return cascadeUpdate;
+      }
+      return stop;
+    });
+
+    if (routeChanged) {
+      batchUpdates.push(
+        updateDoc(doc(db, 'routes', docSnap.id), {
+          stops: updatedStops,
+          updatedAt: Timestamp.now(),
+        })
+      );
+    }
+  }
+  
+  if (batchUpdates.length > 0) {
+    await Promise.all(batchUpdates);
+  }
 }
 
 export async function deleteCatalogStop(id: string): Promise<void> {

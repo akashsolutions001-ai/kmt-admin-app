@@ -135,6 +135,7 @@ export default function Stops() {
       name: stop.name,
       latitude: stop.latitude?.toString() ?? '',
       longitude: stop.longitude?.toString() ?? '',
+      description: stop.description ?? '',
     });
     setIsFormOpen(true);
   };
@@ -163,6 +164,7 @@ export default function Stops() {
         name: (matchedCatalogStop?.name ?? formData.name).trim(),
         ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
         ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
+        ...(formData.description.trim() ? { description: formData.description.trim() } : { description: '' }),
       };
 
       if (editingStop) {
@@ -188,6 +190,7 @@ export default function Stops() {
         name: formData.name.trim(),
         ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
         ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
+        ...(formData.description.trim() ? { description: formData.description.trim() } : { description: '' }),
       };
       await updateCatalogStop(matchedCatalogStop.id, payload);
       toast.success('Stop updated');
@@ -330,6 +333,7 @@ export default function Stops() {
                 <tr>
                   <th className="w-12 text-center">#</th>
                   <th>Stop Name</th>
+                  <th className="hidden sm:table-cell">Description</th>
                   <th className="hidden md:table-cell">Coordinates</th>
                   <th className="hidden lg:table-cell">Map</th>
                   <th className="w-24">Actions</th>
@@ -338,13 +342,13 @@ export default function Stops() {
               <tbody>
                 {catalogStops.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="text-center py-8 text-muted-foreground">
+                    <td colSpan={6} className="text-center py-8 text-muted-foreground">
                       No stops in library. Click &quot;Add Stop&quot; to create one.
                     </td>
                   </tr>
                 ) : filteredCatalogStops.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="text-center py-8 text-muted-foreground">
+                    <td colSpan={6} className="text-center py-8 text-muted-foreground">
                       No stops match your search.
                     </td>
                   </tr>
@@ -353,6 +357,13 @@ export default function Stops() {
                     <tr key={stop.id}>
                       <td className="text-center text-muted-foreground text-sm">{index + 1}</td>
                       <td className="font-medium">{stop.name}</td>
+                      <td className="hidden sm:table-cell text-sm text-muted-foreground max-w-xs">
+                        {stop.description ? (
+                          <span className="line-clamp-2">{stop.description}</span>
+                        ) : (
+                          <span className="italic opacity-50">—</span>
+                        )}
+                      </td>
                       <td className="hidden md:table-cell text-sm text-muted-foreground">
                         {stop.latitude != null && stop.longitude != null
                           ? `${stop.latitude.toFixed(4)}, ${stop.longitude.toFixed(4)}`
@@ -407,6 +418,7 @@ export default function Stops() {
                 <tr>
                   <th className="w-12 text-center">#</th>
                   <th>Stop Name</th>
+                  <th className="hidden sm:table-cell">Description</th>
                   <th>Route</th>
                   <th className="hidden sm:table-cell">Order</th>
                   <th className="hidden md:table-cell">Coordinates</th>
@@ -416,13 +428,13 @@ export default function Stops() {
               <tbody>
                 {routeStops.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <td colSpan={7} className="text-center py-8 text-muted-foreground">
                       No stops assigned to routes yet
                     </td>
                   </tr>
                 ) : filteredRouteStops.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <td colSpan={7} className="text-center py-8 text-muted-foreground">
                       No stops match your search.
                     </td>
                   </tr>
@@ -431,6 +443,13 @@ export default function Stops() {
                     <tr key={`${stop.routeId}-${stop.id}`}>
                       <td className="text-center text-muted-foreground text-sm">{index + 1}</td>
                       <td className="font-medium">{stop.name}</td>
+                      <td className="hidden sm:table-cell text-sm text-muted-foreground max-w-xs">
+                        {stop.description ? (
+                          <span className="line-clamp-2">{stop.description}</span>
+                        ) : (
+                          <span className="italic opacity-50">—</span>
+                        )}
+                      </td>
                       <td>{stop.routeName}</td>
                       <td className="hidden sm:table-cell">{stop.order}</td>
                       <td className="hidden md:table-cell text-sm text-muted-foreground">
@@ -471,6 +490,7 @@ export default function Stops() {
             isLocating={isLocating}
             parsedCoords={parsedCoords}
             onNameChange={(name) => setFormData((prev) => ({ ...prev, name }))}
+            onDescriptionChange={(description) => setFormData((prev) => ({ ...prev, description }))}
             onCoordinateChange={handleCoordinateChange}
             onUseCurrentLocation={handleUseCurrentLocation}
             nameInputId="catalogStopName"

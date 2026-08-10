@@ -36,7 +36,7 @@ import {
 import { Route, Stop, CatalogStop } from '@/types/admin';
 import { cn } from '@/lib/utils';
 import { areCoordinatesWithinDistance } from '@/lib/mapUtils';
-import { getCatalogStops, addCatalogStop, findNearbyCatalogStop } from '@/lib/stopsCatalog';
+import { getCatalogStops, addCatalogStop, updateCatalogStop, findNearbyCatalogStop } from '@/lib/stopsCatalog';
 import { useStopLocationForm, parseStopFormCoordinates } from '@/hooks/useStopLocationForm';
 import { toast } from 'sonner';
 import { db } from '@/lib/firebase';
@@ -284,6 +284,7 @@ export default function Routes() {
       name: stop.name,
       latitude: lat,
       longitude: lng,
+      description: stop.description ?? '',
     });
     setIsStopFormOpen(true);
   };
@@ -365,14 +366,38 @@ export default function Routes() {
           parsedLat,
           parsedLng
         );
+        
+        let targetCatalogId = editingStop.catalogStopId;
+        let finalName = stopFormData.name.trim();
+        let finalLat = parsedLat;
+        let finalLng = parsedLng;
+        let finalDescription = stopFormData.description.trim();
+        
+        if (nearbyStop) {
+           targetCatalogId = nearbyStop.id;
+           finalName = nearbyStop.name;
+           finalLat = nearbyStop.latitude;
+           finalLng = nearbyStop.longitude;
+           // keep description from form when snapping to nearby stop
+        } else if (editingStop.catalogStopId) {
+           const payload = {
+              name: finalName,
+              ...(finalLat !== undefined && !isNaN(finalLat) ? { latitude: finalLat } : {}),
+              ...(finalLng !== undefined && !isNaN(finalLng) ? { longitude: finalLng } : {}),
+              description: finalDescription,
+           };
+           await updateCatalogStop(editingStop.catalogStopId, payload);
+        }
+
         updatedStops = selectedRoute.stops.map((s) =>
           s.id === editingStop.id
             ? {
                 ...s,
-                name: nearbyStop?.name ?? stopFormData.name.trim(),
-                ...(nearbyStop ? { catalogStopId: nearbyStop.id } : {}),
-                ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
-                ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
+                name: finalName,
+                ...(targetCatalogId ? { catalogStopId: targetCatalogId } : {}),
+                ...(finalLat !== undefined && !isNaN(finalLat) ? { latitude: finalLat } : {}),
+                ...(finalLng !== undefined && !isNaN(finalLng) ? { longitude: finalLng } : {}),
+                description: finalDescription,
               }
             : s
         );
@@ -409,6 +434,7 @@ export default function Routes() {
           catalogStopId: catalogId,
           ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
           ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
+          ...(stopFormData.description.trim() ? { description: stopFormData.description.trim() } : {}),
         };
         updatedStops = [...selectedRoute.stops, newStop];
       }
@@ -819,7 +845,12 @@ export default function Routes() {
                             {stop.order}
                           </button>
                         )}
-                        <span className="text-sm truncate">{stop.name}</span>
+                        <div className="min-w-0">
+                          <span className="text-sm truncate block">{stop.name}</span>
+                          {stop.description && (
+                            <span className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{stop.description}</span>
+                          )}
+                        </div>
                       </div>
                       <div className="flex items-center gap-0.5 sm:gap-1 flex-shrink-0">
                         <Button
@@ -1010,6 +1041,7 @@ export default function Routes() {
                 isLocating={isLocating}
                 parsedCoords={parsedStopCoords}
                 onNameChange={(name) => setStopFormData((prev) => ({ ...prev, name }))}
+                onDescriptionChange={(description) => setStopFormData((prev) => ({ ...prev, description }))}
                 onCoordinateChange={handleCoordinateChange}
                 onUseCurrentLocation={handleUseCurrentLocation}
                 nameInputId="routeStopName"
