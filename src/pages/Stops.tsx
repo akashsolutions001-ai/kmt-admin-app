@@ -327,7 +327,9 @@ export default function Stops() {
           <p className="text-sm text-muted-foreground mb-4">
             Add stops here once — reuse them when building routes.
           </p>
-          <div className="glass-card overflow-x-auto">
+
+          {/* Desktop table */}
+          <div className="hidden sm:block glass-card overflow-x-auto">
             <table className="admin-table">
               <thead>
                 <tr>
@@ -404,6 +406,65 @@ export default function Stops() {
               </tbody>
             </table>
           </div>
+
+          {/* Mobile card list */}
+          <div className="sm:hidden space-y-3">
+            {catalogStops.length === 0 ? (
+              <div className="glass-card p-8 text-center text-muted-foreground">
+                No stops in library. Tap &quot;Add Stop&quot; to create one.
+              </div>
+            ) : filteredCatalogStops.length === 0 ? (
+              <div className="glass-card p-8 text-center text-muted-foreground">
+                No stops match your search.
+              </div>
+            ) : (
+              filteredCatalogStops.map((stop, index) => (
+                <div key={stop.id} className="rounded-lg border bg-card p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs text-muted-foreground font-mono">#{index + 1}</span>
+                        <h3 className="font-medium text-sm truncate">{stop.name}</h3>
+                      </div>
+                      {stop.description && (
+                        <p className="text-xs text-muted-foreground line-clamp-2 mb-1">{stop.description}</p>
+                      )}
+                      <div className="flex items-center gap-3 flex-wrap mt-1">
+                        {stop.latitude != null && stop.longitude != null && (
+                          <>
+                            <p className="text-xs text-muted-foreground font-mono">
+                              {stop.latitude.toFixed(4)}, {stop.longitude.toFixed(4)}
+                            </p>
+                            <a
+                              href={getGoogleMapsUrl(stop.latitude, stop.longitude)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs text-primary"
+                            >
+                              Map <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleEditStop(stop)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                        onClick={() => handleDeleteStop(stop)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </section>
 
         {/* Stops on routes (existing view) */}
@@ -412,7 +473,9 @@ export default function Stops() {
           <p className="text-sm text-muted-foreground mb-4">
             Stops currently assigned to routes (manage order in Routes &amp; Stops).
           </p>
-          <div className="glass-card overflow-x-auto">
+
+          {/* Desktop table */}
+          <div className="hidden sm:block glass-card overflow-x-auto">
             <table className="admin-table">
               <thead>
                 <tr>
@@ -476,6 +539,48 @@ export default function Stops() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile card list */}
+          <div className="sm:hidden space-y-3">
+            {routeStops.length === 0 ? (
+              <div className="glass-card p-8 text-center text-muted-foreground">
+                No stops assigned to routes yet.
+              </div>
+            ) : filteredRouteStops.length === 0 ? (
+              <div className="glass-card p-8 text-center text-muted-foreground">
+                No stops match your search.
+              </div>
+            ) : (
+              filteredRouteStops.map((stop, index) => (
+                <div key={`${stop.routeId}-${stop.id}`} className="rounded-lg border bg-card p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3 mb-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs text-muted-foreground font-mono flex-shrink-0">#{index + 1}</span>
+                      <h3 className="font-medium text-sm truncate">{stop.name}</h3>
+                    </div>
+                    <span className="text-xs text-muted-foreground flex-shrink-0">Stop #{stop.order}</span>
+                  </div>
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    <p><span className="font-medium text-foreground">Route:</span> {stop.routeName}</p>
+                    {stop.description && <p className="line-clamp-1">{stop.description}</p>}
+                    {stop.latitude != null && stop.longitude != null && (
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono">{stop.latitude.toFixed(4)}, {stop.longitude.toFixed(4)}</span>
+                        <a
+                          href={getGoogleMapsUrl(stop.latitude, stop.longitude)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-primary"
+                        >
+                          Map <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </section>
       </div>

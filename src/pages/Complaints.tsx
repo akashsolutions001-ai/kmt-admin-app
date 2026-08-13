@@ -113,7 +113,9 @@ export default function Complaints() {
         {resolved.length > 0 && (
           <section>
             <h2 className="text-lg font-semibold mb-4">Resolved ({resolved.length})</h2>
-            <div className="glass-card overflow-x-auto">
+
+            {/* Desktop table */}
+            <div className="hidden sm:block glass-card overflow-x-auto">
               <table className="admin-table">
                 <thead>
                   <tr>
@@ -138,6 +140,26 @@ export default function Complaints() {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile card list */}
+            <div className="sm:hidden space-y-3">
+              {resolved.map((c) => (
+                <div key={c.id} className="rounded-lg border bg-card p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="font-medium text-sm">{c.passengerName}</span>
+                        <span className={cn('text-xs font-medium', c.status === 'resolved' ? 'text-success' : 'text-destructive')}>
+                          {c.status}
+                        </span>
+                      </div>
+                      {c.subject && <p className="text-xs text-muted-foreground truncate">{c.subject}</p>}
+                      <p className="text-xs text-muted-foreground mt-1">{formatDate(c.createdAt)}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </section>
         )}

@@ -90,7 +90,8 @@ export default function Schedules() {
         <p className="text-xs text-muted-foreground mt-2">Use Import or Add Schedule to manage timetables.</p>
       </div>
 
-      <div className="glass-card overflow-x-auto">
+      {/* Desktop table */}
+      <div className="hidden sm:block glass-card overflow-x-auto">
         <table className="admin-table">
           <thead>
             <tr>
@@ -117,6 +118,28 @@ export default function Schedules() {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile card list */}
+      <div className="sm:hidden space-y-3">
+        {schedules.length === 0 ? (
+          <div className="glass-card p-8 text-center text-muted-foreground">
+            No schedules yet. Import or add one.
+          </div>
+        ) : (
+          schedules.map((s) => (
+            <div key={s.id} className="rounded-lg border bg-card p-4 shadow-sm">
+              <h3 className="font-medium text-sm mb-2 truncate">{s.routeName}</h3>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <p><span className="font-medium text-foreground">Bus:</span> {s.busNumber}</p>
+                <p><span className="font-medium text-foreground">Departs:</span> {s.departureTime}</p>
+                {s.frequency && (
+                  <p className="col-span-2"><span className="font-medium text-foreground">Frequency:</span> {s.frequency}</p>
+                )}
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </AdminLayout>
   );

@@ -32,6 +32,7 @@ import {
   ArrowLeft,
   DatabaseZap,
   Search,
+  Copy,
 } from 'lucide-react';
 import { Route, Stop, CatalogStop } from '@/types/admin';
 import { cn } from '@/lib/utils';
@@ -112,6 +113,12 @@ export default function Routes() {
   const [showRouteDetails, setShowRouteDetails] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
 
+  // Copy stops state
+  const [isCopyStopsOpen, setIsCopyStopsOpen] = useState(false);
+  const [copySourceRouteId, setCopySourceRouteId] = useState<string>('');
+  const [copySelectedStopIds, setCopySelectedStopIds] = useState<string[]>([]);
+  const [isCopying, setIsCopying] = useState(false);
+
   const [routeFormData, setRouteFormData] = useState({ name: '', startingPoint: '' });
   const [catalogStops, setCatalogStops] = useState<CatalogStop[]>([]);
   const [stopAddMode, setStopAddMode] = useState<'new' | 'library'>('new');
@@ -151,10 +158,7 @@ export default function Routes() {
       })) as Route[];
       setRoutes(routesData);
       setCatalogStops(catalog);
-      if (routesData.length > 0 && !selectedRouteId) {
-        setSelectedRouteId(routesData[0].id);
-        setShowRouteDetails(true);
-      }
+      // No default selection — user picks a route from the list
     } catch (error) {
       console.error('Error loading routes:', error);
     } finally {
@@ -254,8 +258,7 @@ export default function Routes() {
       try {
         const routeRef = doc(db, 'routes', selectedRoute.id);
         await deleteDoc(routeRef);
-        const newRoutes = routes.filter(r => r.id !== selectedRoute.id);
-        setSelectedRouteId(newRoutes[0]?.id || null);
+        setSelectedRouteId(null);
         setShowRouteDetails(false);
         loadData();
       } catch (error) {
@@ -566,6 +569,92 @@ export default function Routes() {
     }
   };
 
+  // Copy stops from another route into the current route
+  const handleOpenCopyStops = () => {
+    const otherRoutes = routes.filter(r => r.id !== selectedRouteId);
+    if (otherRoutes.length === 0) {
+      toast.error('No other routes available to copy from');
+      return;
+    }
+    setCopySourceRouteId(otherRoutes[0].id);
+    setCopySelectedStopIds([]);
+    setIsCopyStopsOpen(true);
+  };
+
+  const copySourceRoute = routes.find(r => r.id === copySourceRouteId);
+
+  const toggleCopyStop = (stopId: string, checked: boolean) => {
+    setCopySelectedStopIds(prev =>
+      checked ? [...new Set([...prev, stopId])] : prev.filter(id => id !== stopId)
+    );
+  };
+
+  const handleSelectAllCopyStops = (checked: boolean) => {
+    setCopySelectedStopIds(checked ? (copySourceRoute?.stops.map(s => s.id) ?? []) : []);
+  };
+
+  const handleConfirmCopyStops = async () => {
+    if (!selectedRoute || !copySourceRoute || copySelectedStopIds.length === 0) return;
+    setIsCopying(true);
+    try {
+      // Get selected stops in their original order
+      const stopsToCopy = copySourceRoute.stops
+        .filter(s => copySelectedStopIds.includes(s.id))
+        .sort((a, b) => a.order - b.order);
+
+      const newStops: Stop[] = [];
+      const skippedNames: string[] = [];
+
+      for (const sourcStop of stopsToCopy) {
+        const alreadyOnRoute = selectedRoute.stops.some(
+          s =>
+            (sourcStop.catalogStopId && s.catalogStopId === sourcStop.catalogStopId) ||
+            areCoordinatesWithinDistance(s.latitude, s.longitude, sourcStop.latitude, sourcStop.longitude)
+        );
+        if (alreadyOnRoute) {
+          skippedNames.push(sourcStop.name);
+          continue;
+        }
+        newStops.push({
+          id: `${selectedRoute.id}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          name: sourcStop.name,
+          order: selectedRoute.stops.length + newStops.length + 1,
+          ...(sourcStop.catalogStopId ? { catalogStopId: sourcStop.catalogStopId } : {}),
+          ...(sourcStop.latitude != null ? { latitude: sourcStop.latitude } : {}),
+          ...(sourcStop.longitude != null ? { longitude: sourcStop.longitude } : {}),
+          ...(sourcStop.description ? { description: sourcStop.description } : {}),
+        });
+      }
+
+      if (newStops.length === 0) {
+        toast.error('All selected stops are already on this route');
+        setIsCopying(false);
+        return;
+      }
+
+      const routeRef = doc(db, 'routes', selectedRoute.id);
+      await updateDoc(routeRef, {
+        stops: [...selectedRoute.stops, ...newStops],
+        updatedAt: Timestamp.now(),
+      });
+
+      setIsCopyStopsOpen(false);
+      setCopySelectedStopIds([]);
+
+      if (skippedNames.length > 0) {
+        toast.success(`Copied ${newStops.length} stop(s). Skipped ${skippedNames.length} duplicate(s).`);
+      } else {
+        toast.success(`Copied ${newStops.length} stop(s) from "${copySourceRoute.name}"`);
+      }
+      loadData();
+    } catch (error) {
+      console.error('Error copying stops:', error);
+      toast.error('Failed to copy stops');
+    } finally {
+      setIsCopying(false);
+    }
+  };
+
   // One-time migration: push existing route stops (without catalogStopId) into the stops collection
   const handleMigrateStops = async () => {
     setIsMigrating(true);
@@ -796,6 +885,15 @@ export default function Routes() {
                         Clear
                       </Button>
                     )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleOpenCopyStops}
+                      title="Copy stops from another route"
+                    >
+                      <Copy className="h-4 w-4 sm:mr-2" />
+                      <span className="hidden sm:inline">Copy From</span>
+                    </Button>
                     <Button size="sm" onClick={handleAddStop}>
                       <Plus className="h-4 w-4 sm:mr-2" />
                       <span className="hidden sm:inline">Add Stop</span>
@@ -1107,6 +1205,154 @@ export default function Routes() {
         confirmLabel="Confirm Change"
         onConfirm={confirmReorder}
       />
+
+      {/* Copy Stops Dialog */}
+      <Dialog open={isCopyStopsOpen} onOpenChange={(open) => {
+        setIsCopyStopsOpen(open);
+        if (!open) setCopySelectedStopIds([]);
+      }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-heading">Copy Stops from Another Route</DialogTitle>
+            <DialogDescription>
+              Select a source route, pick the stops you want, then paste them into{' '}
+              <span className="font-medium text-foreground">{selectedRoute?.name}</span>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Source route picker */}
+            <div className="space-y-2">
+              <Label>Source Route</Label>
+              <Select
+                value={copySourceRouteId}
+                onValueChange={(id) => {
+                  setCopySourceRouteId(id);
+                  setCopySelectedStopIds([]);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pick a route…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {routes
+                    .filter(r => r.id !== selectedRouteId)
+                    .map(r => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.name} ({r.stops.length} stops)
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Stop list from source route */}
+            {copySourceRoute && copySourceRoute.stops.length > 0 ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>
+                    Stops in {copySourceRoute.name}
+                    {copySelectedStopIds.length > 0 && (
+                      <span className="ml-2 text-xs text-muted-foreground font-normal">
+                        {copySelectedStopIds.length} selected
+                      </span>
+                    )}
+                  </Label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleSelectAllCopyStops(
+                        copySelectedStopIds.length < copySourceRoute.stops.length
+                      )
+                    }
+                    className="text-xs text-primary hover:underline"
+                  >
+                    {copySelectedStopIds.length < copySourceRoute.stops.length
+                      ? 'Select all'
+                      : 'Deselect all'}
+                  </button>
+                </div>
+
+                <div className="rounded-md border max-h-[300px] overflow-y-auto divide-y">
+                  {copySourceRoute.stops
+                    .slice()
+                    .sort((a, b) => a.order - b.order)
+                    .map((stop) => {
+                      const alreadyOnTarget = selectedRoute?.stops.some(
+                        s =>
+                          (stop.catalogStopId && s.catalogStopId === stop.catalogStopId) ||
+                          areCoordinatesWithinDistance(
+                            s.latitude, s.longitude,
+                            stop.latitude, stop.longitude
+                          )
+                      );
+                      return (
+                        <div
+                          key={stop.id}
+                          className={cn(
+                            'flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors',
+                            alreadyOnTarget && 'opacity-40 cursor-not-allowed'
+                          )}
+                          onClick={() => {
+                            if (alreadyOnTarget) return;
+                            toggleCopyStop(stop.id, !copySelectedStopIds.includes(stop.id));
+                          }}
+                        >
+                          <Checkbox
+                            checked={copySelectedStopIds.includes(stop.id)}
+                            disabled={alreadyOnTarget}
+                            onCheckedChange={(checked) => {
+                              if (alreadyOnTarget) return;
+                              toggleCopyStop(stop.id, checked === true);
+                            }}
+                            aria-label={stop.name}
+                          />
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-medium flex-shrink-0">
+                              {stop.order}
+                            </span>
+                            <span className="text-sm truncate">{stop.name}</span>
+                          </div>
+                          {alreadyOnTarget && (
+                            <span className="text-xs text-muted-foreground flex-shrink-0">already added</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Stops already on <span className="font-medium">{selectedRoute?.name}</span> are
+                  greyed out and will be skipped automatically.
+                </p>
+              </div>
+            ) : copySourceRoute ? (
+              <div className="rounded-md border px-4 py-8 text-center text-sm text-muted-foreground">
+                This route has no stops yet.
+              </div>
+            ) : null}
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsCopyStopsOpen(false)}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmCopyStops}
+              disabled={copySelectedStopIds.length === 0 || isCopying}
+              className="w-full sm:w-auto"
+            >
+              {isCopying
+                ? 'Copying…'
+                : `Copy ${copySelectedStopIds.length > 0 ? `${copySelectedStopIds.length} ` : ''}Stop${copySelectedStopIds.length !== 1 ? 's' : ''}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

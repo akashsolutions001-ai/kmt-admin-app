@@ -192,7 +192,7 @@ export default function LiveMonitoring() {
         <div className="lg:col-span-8">
           <div className="space-y-4 lg:space-y-6">
             {/* Map - always visible */}
-            <div style={{ height: selectedBus ? '400px' : '550px' }} className="transition-all duration-300">
+            <div className="h-[280px] sm:h-[350px] lg:h-[400px] transition-all duration-300">
               <LiveMap
                 catalogStops={catalogStops}
                 liveBuses={liveBuses}

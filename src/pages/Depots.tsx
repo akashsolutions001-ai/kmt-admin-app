@@ -145,7 +145,8 @@ export default function Depots() {
         </Button>
       }
     >
-      <div className="glass-card overflow-x-auto">
+      {/* Desktop table */}
+      <div className="hidden sm:block glass-card overflow-x-auto">
         <table className="admin-table">
           <thead>
             <tr>
@@ -209,6 +210,55 @@ export default function Depots() {
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile card list */}
+      <div className="sm:hidden space-y-3">
+        {depots.length === 0 ? (
+          <div className="glass-card p-8 text-center text-muted-foreground">
+            No depots configured. Tap &quot;Add Depot&quot; to create one.
+          </div>
+        ) : (
+          depots.map((d) => (
+            <div key={d.id} className="rounded-lg border bg-card p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-medium text-sm mb-1">{d.name}</h3>
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    {d.address && <p>{d.address}</p>}
+                    <p><span className="font-medium text-foreground">Buses:</span> {d.busCount ?? 0}</p>
+                    {d.latitude != null && d.longitude != null && (
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono">{d.latitude.toFixed(4)}, {d.longitude.toFixed(4)}</span>
+                        <a
+                          href={getGoogleMapsUrl(d.latitude, d.longitude)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-primary"
+                        >
+                          Map <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleEditDepot(d)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                    onClick={() => handleDeleteDepot(d)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>

@@ -367,15 +367,17 @@
   left: 12px;
   z-index: 1000;
   display: flex;
-  gap: 12px;
-  padding: 6px 12px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 6px 10px;
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(8px);
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-  font-size: 12px;
+  font-size: 11px;
   font-family: 'Inter', sans-serif;
   color: #475569;
+  max-width: calc(100% - 24px);
 }
 
 .dark .live-map-legend {
