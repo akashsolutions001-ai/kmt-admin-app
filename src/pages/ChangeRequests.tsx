@@ -152,7 +152,7 @@ export default function ChangeRequests() {
   if (isLoading) {
     return (
       <AdminLayout title="Change Requests" subtitle="Loading...">
-        <div className="flex items-center justify-center h-64">
+        <div className="flex items-center justify-center min-h-[60vh]">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </div>
       </AdminLayout>

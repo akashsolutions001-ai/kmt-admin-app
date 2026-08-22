@@ -231,12 +231,21 @@ function dedupeRouteStops(stops: Stop[], catalogStops: CatalogStop[], catalogIdR
   return { stops: deduped, removedCount, remappedCount };
 }
 
-export async function analyzeDuplicateStops(): Promise<DuplicateStopSummary> {
-  const [catalog, routesSnap] = await Promise.all([
-    getCatalogStops(),
-    getDocs(query(collection(db, 'routes'), orderBy('name'))),
-  ]);
-  const routes = routesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as Route[];
+export async function analyzeDuplicateStops(
+  preloadedCatalog?: CatalogStop[],
+  preloadedRoutes?: Route[]
+): Promise<DuplicateStopSummary> {
+  let catalog = preloadedCatalog;
+  let routes = preloadedRoutes;
+
+  if (!catalog || !routes) {
+    const [catalogSnap, routesSnap] = await Promise.all([
+      getCatalogStops(),
+      getDocs(query(collection(db, 'routes'), orderBy('name'))),
+    ]);
+    catalog = catalogSnap;
+    routes = routesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as Route[];
+  }
 
   let duplicateCatalogCount = 0;
   for (const group of groupStopsByProximity(catalog)) {
@@ -366,4 +375,87 @@ export async function formatAllStopNames(): Promise<{ catalogUpdated: number; ro
   }
 
   return { catalogUpdated, routesUpdated };
+}
+
+export async function syncOrphanedRouteStopsToCatalog(): Promise<number> {
+  const [catalogSnap, routesSnap] = await Promise.all([
+    getDocs(collection(db, 'stops')),
+    getDocs(collection(db, 'routes')),
+  ]);
+
+  const catalog = catalogSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as CatalogStop[];
+  const catalogMap = new Map<string, CatalogStop>();
+  const catalogNameMap = new Map<string, CatalogStop>();
+  
+  for (const stop of catalog) {
+    catalogMap.set(stop.id, stop);
+    catalogNameMap.set(stop.name.toLowerCase().trim(), stop);
+  }
+
+  const routes = routesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as Route[];
+  
+  let newlyAdded = 0;
+  
+  for (const route of routes) {
+    let routeChanged = false;
+    const updatedStops = [...(route.stops ?? [])];
+    
+    for (let i = 0; i < updatedStops.length; i++) {
+      const stop = updatedStops[i];
+      const routeStopNameLower = stop.name.toLowerCase().trim();
+      
+      let needsFix = false;
+      let targetCatalogId = stop.catalogStopId;
+
+      // Check if catalogStopId is missing or invalid
+      if (!targetCatalogId || !catalogMap.has(targetCatalogId)) {
+        needsFix = true;
+      } else {
+        // If it exists, check if the name matches. If names are different, it was improperly merged by coordinates
+        const linkedCatalog = catalogMap.get(targetCatalogId)!;
+        if (linkedCatalog.name.toLowerCase().trim() !== routeStopNameLower) {
+          needsFix = true;
+        }
+      }
+
+      if (needsFix) {
+        // Try to find an existing catalog stop by name first
+        let matchedCatalog = catalogNameMap.get(routeStopNameLower);
+        
+        if (!matchedCatalog) {
+           // Create a new catalog stop if no exact name match exists
+           const newId = await addCatalogStop({
+             name: stop.name,
+             ...(stop.latitude != null ? { latitude: stop.latitude } : {}),
+             ...(stop.longitude != null ? { longitude: stop.longitude } : {}),
+             ...(stop.description ? { description: stop.description } : {}),
+           });
+           
+           matchedCatalog = {
+             id: newId,
+             name: stop.name,
+             latitude: stop.latitude,
+             longitude: stop.longitude,
+             description: stop.description,
+           };
+           
+           catalogMap.set(newId, matchedCatalog);
+           catalogNameMap.set(routeStopNameLower, matchedCatalog);
+           newlyAdded++;
+        }
+        
+        updatedStops[i] = { ...stop, catalogStopId: matchedCatalog.id };
+        routeChanged = true;
+      }
+    }
+    
+    if (routeChanged) {
+      await updateDoc(doc(db, 'routes', route.id), {
+        stops: updatedStops,
+        updatedAt: Timestamp.now(),
+      });
+    }
+  }
+  
+  return newlyAdded;
 }

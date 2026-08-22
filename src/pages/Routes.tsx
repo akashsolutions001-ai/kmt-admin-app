@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import { AdminLayout } from '@/components/layout/AdminLayout';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
@@ -33,11 +33,13 @@ import {
   DatabaseZap,
   Search,
   Copy,
+  Download,
 } from 'lucide-react';
 import { Route, Stop, CatalogStop } from '@/types/admin';
 import { cn } from '@/lib/utils';
 import { areCoordinatesWithinDistance } from '@/lib/mapUtils';
 import { getCatalogStops, addCatalogStop, updateCatalogStop, findNearbyCatalogStop } from '@/lib/stopsCatalog';
+import { exportRoute, exportAllRoutes } from '@/lib/exportUtils';
 import { useStopLocationForm, parseStopFormCoordinates } from '@/hooks/useStopLocationForm';
 import { toast } from 'sonner';
 import { db } from '@/lib/firebase';
@@ -119,6 +121,9 @@ export default function Routes() {
   const [copySelectedStopIds, setCopySelectedStopIds] = useState<string[]>([]);
   const [isCopying, setIsCopying] = useState(false);
 
+  // Export state
+  const [isExportOpen, setIsExportOpen] = useState(false);
+
   const [routeFormData, setRouteFormData] = useState({ name: '', startingPoint: '' });
   const [catalogStops, setCatalogStops] = useState<CatalogStop[]>([]);
   const [stopAddMode, setStopAddMode] = useState<'new' | 'library'>('new');
@@ -129,6 +134,13 @@ export default function Routes() {
   const [orderInputValue, setOrderInputValue] = useState('');
   const [isReorderConfirmOpen, setIsReorderConfirmOpen] = useState(false);
   const [pendingReorder, setPendingReorder] = useState<PendingReorderAction | null>(null);
+
+  const [routeSearchQuery, setRouteSearchQuery] = useState('');
+  const deferredRouteSearchQuery = useDeferredValue(routeSearchQuery);
+  const filteredRoutes = routes.filter(r => 
+    r.name.toLowerCase().includes(deferredRouteSearchQuery.toLowerCase()) ||
+    (r.startingPoint && r.startingPoint.toLowerCase().includes(deferredRouteSearchQuery.toLowerCase()))
+  );
 
   const {
     formData: stopFormData,
@@ -382,6 +394,9 @@ export default function Routes() {
            finalLat = nearbyStop.latitude;
            finalLng = nearbyStop.longitude;
            // keep description from form when snapping to nearby stop
+           if (finalDescription !== nearbyStop.description) {
+             await updateCatalogStop(targetCatalogId, { description: finalDescription });
+           }
         } else if (editingStop.catalogStopId) {
            const payload = {
               name: finalName,
@@ -412,11 +427,16 @@ export default function Routes() {
         if (nearbyStop) {
           catalogId = nearbyStop.id;
           stopName = nearbyStop.name;
+          const finalDescription = stopFormData.description.trim();
+          if (finalDescription && finalDescription !== nearbyStop.description) {
+            await updateCatalogStop(catalogId, { description: finalDescription });
+          }
         } else {
           catalogId = await addCatalogStop({
             name: stopName,
             ...(parsedLat !== undefined && !isNaN(parsedLat) ? { latitude: parsedLat } : {}),
             ...(parsedLng !== undefined && !isNaN(parsedLng) ? { longitude: parsedLng } : {}),
+            ...(stopFormData.description.trim() ? { description: stopFormData.description.trim() } : {}),
           });
         }
 
@@ -655,6 +675,27 @@ export default function Routes() {
     }
   };
 
+  // Export handlers
+  const handleExportCurrent = () => {
+    if (!selectedRoute) {
+      toast.error('No route selected');
+      return;
+    }
+    exportRoute(selectedRoute, 'csv');
+    toast.success(`Exported "${selectedRoute.name}" as CSV`);
+    setIsExportOpen(false);
+  };
+
+  const handleExportAll = () => {
+    if (routes.length === 0) {
+      toast.error('No routes to export');
+      return;
+    }
+    exportAllRoutes(routes, 'csv');
+    toast.success(`Exported ${routes.length} route(s) as CSV`);
+    setIsExportOpen(false);
+  };
+
   // One-time migration: push existing route stops (without catalogStopId) into the stops collection
   const handleMigrateStops = async () => {
     setIsMigrating(true);
@@ -748,7 +789,7 @@ export default function Routes() {
   if (isLoading) {
     return (
       <AdminLayout title="Routes & Stops" subtitle="Loading...">
-        <div className="flex items-center justify-center h-64">
+        <div className="flex items-center justify-center min-h-[60vh]">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </div>
       </AdminLayout>
@@ -761,6 +802,15 @@ export default function Routes() {
       subtitle="Define how buses move in the real world"
       actions={
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setIsExportOpen(true)}
+            title="Export routes"
+          >
+            <Download className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Export</span>
+          </Button>
           {unmigatedCount > 0 && (
             <Button
               variant="outline"
@@ -789,11 +839,24 @@ export default function Routes() {
           showRouteDetails && "hidden lg:block"
         )}>
           <div className="rounded-lg border bg-card">
-            <div className="border-b px-4 py-3">
+            <div className="border-b px-4 py-3 space-y-3">
               <h3 className="text-sm font-medium">Routes ({routes.length})</h3>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="search"
+                  placeholder="Search routes..."
+                  value={routeSearchQuery}
+                  onChange={(e) => setRouteSearchQuery(e.target.value)}
+                  className="pl-8 h-8 text-sm"
+                />
+              </div>
             </div>
             <div className="divide-y max-h-[60vh] lg:max-h-[calc(100vh-220px)] overflow-y-auto">
-              {routes.map((route) => (
+              {filteredRoutes.length === 0 ? (
+                <div className="p-4 text-center text-sm text-muted-foreground">No routes match your search.</div>
+              ) : (
+                filteredRoutes.map((route) => (
                 <button
                   key={route.id}
                   onClick={() => handleSelectRoute(route.id)}
@@ -817,7 +880,7 @@ export default function Routes() {
                     </div>
                   </div>
                 </button>
-              ))}
+              )))}
               {routes.length === 0 && (
                 <div className="px-4 py-8 text-center text-sm text-muted-foreground">
                   No routes created yet
@@ -1349,6 +1412,60 @@ export default function Routes() {
               {isCopying
                 ? 'Copying…'
                 : `Copy ${copySelectedStopIds.length > 0 ? `${copySelectedStopIds.length} ` : ''}Stop${copySelectedStopIds.length !== 1 ? 's' : ''}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Export Dialog */}
+      <Dialog open={isExportOpen} onOpenChange={setIsExportOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-heading">Export Routes</DialogTitle>
+            <DialogDescription>
+              Download route and stop data as CSV
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-4">
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={handleExportCurrent}
+              disabled={!selectedRoute}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export Current Route
+              {selectedRoute && (
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {selectedRoute.stops.length} stops
+                </span>
+              )}
+            </Button>
+
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={handleExportAll}
+              disabled={routes.length === 0}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export All Routes
+              <span className="ml-auto text-xs text-muted-foreground">
+                {routes.length} route(s)
+              </span>
+            </Button>
+
+            {!selectedRoute && (
+              <p className="text-xs text-muted-foreground pt-2">
+                Select a route from the list to export just that route, or export all routes at once.
+              </p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsExportOpen(false)} className="w-full sm:w-auto">
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
